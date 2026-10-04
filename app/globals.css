@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a,
+button,
+input,
+select {
+  outline-offset: 3px;
+}
+
+.page-shell {
+  width: min(100% - 2rem, 72rem);
+  margin-inline: auto;
+}
+
+.button-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  background: #1e3a8a;
+  padding-inline: 1.5rem;
+  color: white;
+  font-weight: 700;
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.button-primary:hover {
+  background: #172554;
+}
+
+.button-primary:focus-visible,
+.button-secondary:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 3px;
+}
+
+.button-secondary {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.75rem;
+  background: white;
+  padding-inline: 1rem;
+  color: #1e293b;
+  font-size: 0.875rem;
+  font-weight: 700;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.button-secondary:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.fact-list {
+  display: grid;
+  gap: 0;
+}
+
+.fact-list > div {
+  display: grid;
+  gap: 0.25rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding-block: 0.9rem;
+}
+
+.fact-list > div:last-child {
+  border-bottom: 0;
+}
+
+.fact-list dt {
+  color: #64748b;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.fact-list dd {
+  color: #0f172a;
+  font-weight: 500;
+}
+
+@media (min-width: 640px) {
+  .fact-list > div {
+    grid-template-columns: 11rem 1fr;
+    gap: 1rem;
+  }
+}
