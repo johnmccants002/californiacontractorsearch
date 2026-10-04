@@ -9,6 +9,7 @@ returns text
 language sql
 immutable
 parallel safe
+set search_path = pg_catalog
 as $$
   select trim(regexp_replace(regexp_replace(lower(coalesce(input, '')), '([a-z])\s*-\s*([0-9])', '\1\2', 'g'), '[^a-z0-9]+', ' ', 'g'));
 $$;
@@ -18,6 +19,7 @@ returns text
 language sql
 immutable
 parallel safe
+set search_path = pg_catalog
 as $$
   select trim(regexp_replace(regexp_replace(public.normalize_search_text(input), '^the\s+', ''), '\s+(llc|inc|incorporated|corp|corporation|company|co)$', ''));
 $$;
@@ -102,6 +104,7 @@ create table public.workers_comp (
 create or replace function public.set_normalized_fields()
 returns trigger
 language plpgsql
+set search_path = pg_catalog
 as $$
 begin
   if tg_table_name = 'licenses' then
@@ -119,7 +122,10 @@ create trigger personnel_normalize_before_write before insert or update of full_
 for each row execute function public.set_normalized_fields();
 
 create or replace function public.set_updated_at()
-returns trigger language plpgsql as $$
+returns trigger
+language plpgsql
+set search_path = pg_catalog
+as $$
 begin new.updated_at := now(); return new; end;
 $$;
 
@@ -143,6 +149,7 @@ create or replace function public.search_license_ids(search_query text, result_l
 returns table (license_id bigint, relevance_score double precision)
 language sql
 stable
+set search_path = pg_catalog
 as $$
   with query as (
     select
@@ -196,11 +203,29 @@ alter table public.personnel enable row level security;
 alter table public.bonds enable row level security;
 alter table public.workers_comp enable row level security;
 
-create policy "Public read licenses" on public.licenses for select using (true);
-create policy "Public read classifications" on public.classifications for select using (true);
-create policy "Public read license classifications" on public.license_classifications for select using (true);
-create policy "Public read personnel" on public.personnel for select using (true);
-create policy "Public read bonds" on public.bonds for select using (true);
-create policy "Public read workers comp" on public.workers_comp for select using (true);
+create policy "Public read licenses" on public.licenses for select to anon, authenticated using (true);
+create policy "Public read classifications" on public.classifications for select to anon, authenticated using (true);
+create policy "Public read license classifications" on public.license_classifications for select to anon, authenticated using (true);
+create policy "Public read personnel" on public.personnel for select to anon, authenticated using (true);
+create policy "Public read bonds" on public.bonds for select to anon, authenticated using (true);
+create policy "Public read workers comp" on public.workers_comp for select to anon, authenticated using (true);
 
+grant usage on schema public to anon, authenticated;
+grant select on table
+  public.licenses,
+  public.classifications,
+  public.license_classifications,
+  public.personnel,
+  public.bonds,
+  public.workers_comp
+to anon, authenticated;
+
+revoke execute on function public.normalize_search_text(text) from public;
+revoke execute on function public.normalize_business_name(text) from public;
+revoke execute on function public.set_normalized_fields() from public;
+revoke execute on function public.set_updated_at() from public;
+revoke execute on function public.search_license_ids(text, integer) from public;
+
+grant execute on function public.normalize_search_text(text) to anon, authenticated;
+grant execute on function public.normalize_business_name(text) to anon, authenticated;
 grant execute on function public.search_license_ids(text, integer) to anon, authenticated;
