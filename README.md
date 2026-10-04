@@ -6,6 +6,10 @@ A fast, accessible search interface for publicly available California contractor
 
 The repository ships with 32 fictional demonstration contractors. Do not treat demo records as verified license data.
 
+## Project status
+
+The initial application MVP is complete. Hosted Supabase deployment and verification are tracked in [issue #1](https://github.com/johnmccants002/californiacontractorsearch/issues/1).
+
 ## Stack
 
 - Next.js 16 App Router and React 19
