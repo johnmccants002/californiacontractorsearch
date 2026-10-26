@@ -9,17 +9,21 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "data:download": "node scripts/download-cslb-data.mjs",
+    "data:import": "node scripts/import-cslb-data.mjs",
+    "data:finalize": "node scripts/import-cslb-data.mjs --finalize-only"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
+    "csv-parse": "7.0.3",
     "next": "^16.3.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.3",
     "@eslint/js": "^10.0.1",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^24.10.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",

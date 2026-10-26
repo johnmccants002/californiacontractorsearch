@@ -13,6 +13,18 @@ const CONTRACTOR_SELECT = `
 
 type DbRow = Record<string, unknown>;
 
+type SearchRpcRow = {
+  license_id: number;
+  relevance_score: number;
+  total_count: number;
+  matched_by: string[] | null;
+};
+
+type ClassificationRpcRow = {
+  license_id: number;
+  total_count: number;
+};
+
 function mapClassification(row: DbRow): Classification {
   return {
     id: Number(row.id),
@@ -37,18 +49,18 @@ function mapContractor(row: DbRow): Contractor {
     businessNameNormalized: String(row.business_name_normalized),
     licenseStatus: String(row.license_status) as LicenseStatus,
     licenseType: String(row.license_type ?? "Contractor"),
-    issueDate: String(row.issue_date),
-    expirationDate: String(row.expiration_date),
-    addressLine1: String(row.address_line_1),
+    issueDate: row.issue_date ? String(row.issue_date) : "",
+    expirationDate: row.expiration_date ? String(row.expiration_date) : "",
+    addressLine1: row.address_line_1 ? String(row.address_line_1) : "",
     addressLine2: row.address_line_2 ? String(row.address_line_2) : undefined,
-    city: String(row.city),
+    city: row.city ? String(row.city) : "",
     state: String(row.state ?? "CA"),
-    zip: String(row.zip),
+    zip: row.zip ? String(row.zip) : "",
     phone: String(row.phone ?? ""),
     entityType: String(row.entity_type ?? ""),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
-    sourceUpdatedAt: String(row.source_updated_at),
+    sourceUpdatedAt: row.source_updated_at ? String(row.source_updated_at) : "",
     classifications: joins
       .map((join) => join.classifications as DbRow | null)
       .filter((item): item is DbRow => Boolean(item))
@@ -82,6 +94,69 @@ function mapContractor(row: DbRow): Contractor {
       exemption: Boolean(item.exemption),
     })),
   };
+}
+
+async function hydrateContractors(
+  client: NonNullable<ReturnType<typeof createServerSupabaseClient>>,
+  licenseIds: number[],
+): Promise<Contractor[]> {
+  if (!licenseIds.length) return [];
+  const { data, error } = await client.from("licenses").select(CONTRACTOR_SELECT).in("id", licenseIds);
+  if (error) throw new Error(`Supabase contractor hydration failed: ${error.message}`);
+
+  const byId = new Map((data as DbRow[]).map((row) => [Number(row.id), mapContractor(row)]));
+  return licenseIds.map((id) => byId.get(id)).filter((item): item is Contractor => Boolean(item));
+}
+
+export async function searchContractorsFromDatabase(
+  rawQuery: string,
+  offset: number,
+  limit: number,
+): Promise<{
+  results: { contractor: Contractor; score: number; matchedBy: string[] }[];
+  total: number;
+} | null> {
+  const client = createServerSupabaseClient();
+  if (!client) return null;
+
+  const { data, error } = await client.rpc("search_license_ids_v2", {
+    search_query: rawQuery,
+    result_offset: offset,
+    result_limit: limit,
+  });
+  if (error) throw new Error(`Supabase contractor search failed: ${error.message}`);
+
+  const rows = (data ?? []) as SearchRpcRow[];
+  const contractors = await hydrateContractors(client, rows.map((row) => Number(row.license_id)));
+  return {
+    total: Number(rows[0]?.total_count ?? 0),
+    results: contractors.map((contractor, index) => ({
+      contractor,
+      score: Number(rows[index]?.relevance_score ?? 0),
+      matchedBy: rows[index]?.matched_by?.map(String) ?? [],
+    })),
+  };
+}
+
+export async function getContractorsForClassificationFromDatabase(
+  classificationSlug: string,
+  filters: { q?: string; city?: string; zip?: string; status?: string },
+): Promise<Contractor[] | null> {
+  const client = createServerSupabaseClient();
+  if (!client) return null;
+
+  const { data, error } = await client.rpc("classification_license_ids", {
+    classification_slug: classificationSlug,
+    business_query: filters.q ?? null,
+    city_filter: filters.city ?? null,
+    zip_filter: filters.zip ?? null,
+    status_filter: filters.status ?? null,
+    result_limit: 100,
+  });
+  if (error) throw new Error(`Supabase classification query failed: ${error.message}`);
+
+  const rows = (data ?? []) as ClassificationRpcRow[];
+  return hydrateContractors(client, rows.map((row) => Number(row.license_id)));
 }
 
 export async function getAllContractors(): Promise<{ contractors: Contractor[]; source: "demo" | "supabase" }> {

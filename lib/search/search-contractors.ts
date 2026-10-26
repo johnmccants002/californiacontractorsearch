@@ -1,6 +1,10 @@
 import "server-only";
 import type { PaginatedResults } from "@/lib/contractors/types";
-import { getAllContractors } from "@/lib/contractors/repository";
+import {
+  getAllContractors,
+  getContractorsForClassificationFromDatabase,
+  searchContractorsFromDatabase,
+} from "@/lib/contractors/repository";
 import { parseQuery } from "./parse-query";
 import { rankResults } from "./rank-results";
 
@@ -14,9 +18,22 @@ export async function searchContractors(
   const parsed = parseQuery(rawQuery);
   const safePage = Math.max(1, Math.floor(page) || 1);
   const safePageSize = Math.min(50, Math.max(1, Math.floor(pageSize) || DEFAULT_PAGE_SIZE));
+  const start = (safePage - 1) * safePageSize;
+  const databaseResults = await searchContractorsFromDatabase(rawQuery, start, safePageSize);
+
+  if (databaseResults) {
+    return {
+      results: databaseResults.results,
+      total: databaseResults.total,
+      page: safePage,
+      pageSize: safePageSize,
+      totalPages: Math.max(1, Math.ceil(databaseResults.total / safePageSize)),
+      source: "supabase",
+    };
+  }
+
   const { contractors, source } = await getAllContractors();
   const ranked = parsed.kind === "empty" ? [] : rankResults(contractors, parsed);
-  const start = (safePage - 1) * safePageSize;
 
   return {
     results: ranked.slice(start, start + safePageSize),
@@ -32,6 +49,9 @@ export async function getContractorsForClassification(
   classificationSlug: string,
   filters: { q?: string; city?: string; zip?: string; status?: string },
 ) {
+  const databaseContractors = await getContractorsForClassificationFromDatabase(classificationSlug, filters);
+  if (databaseContractors) return { source: "supabase" as const, contractors: databaseContractors };
+
   const { contractors, source } = await getAllContractors();
   const q = filters.q?.trim().toLowerCase();
   const city = filters.city?.trim().toLowerCase();
