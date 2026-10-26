@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-const examples = ["ABC Plumbing", "1056730", "C-36 Sacramento", "John Smith", "Electricians Roseville"];
+const examples = ["1 Demolition", "1082303", "Plumbers in Sacramento", "C-36 Sacramento", "Demolition in El Cerrito"];
 
 interface SearchFormProps {
   defaultValue?: string;

@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "data:download": "node scripts/download-cslb-data.mjs",
     "data:import": "node scripts/import-cslb-data.mjs",
     "data:finalize": "node scripts/import-cslb-data.mjs --finalize-only"

@@ -72,6 +72,7 @@ export interface SearchResult {
 }
 
 export interface PaginatedResults {
+  interpretation?: string;
   results: SearchResult[];
   total: number;
   page: number;

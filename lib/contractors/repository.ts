@@ -2,6 +2,7 @@ import "server-only";
 import { demoContractors, findDemoContractor } from "./demo-data";
 import type { Classification, Contractor, LicenseStatus } from "./types";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { searchLicenseIds } from "@/lib/search/database-search";
 
 const CONTRACTOR_SELECT = `
   *,
@@ -12,13 +13,6 @@ const CONTRACTOR_SELECT = `
 `;
 
 type DbRow = Record<string, unknown>;
-
-type SearchRpcRow = {
-  license_id: number;
-  relevance_score: number;
-  total_count: number;
-  matched_by: string[] | null;
-};
 
 type ClassificationRpcRow = {
   license_id: number;
@@ -115,25 +109,21 @@ export async function searchContractorsFromDatabase(
 ): Promise<{
   results: { contractor: Contractor; score: number; matchedBy: string[] }[];
   total: number;
+  interpretation?: string;
 } | null> {
   const client = createServerSupabaseClient();
   if (!client) return null;
 
-  const { data, error } = await client.rpc("search_license_ids_v2", {
-    search_query: rawQuery,
-    result_offset: offset,
-    result_limit: limit,
-  });
-  if (error) throw new Error(`Supabase contractor search failed: ${error.message}`);
-
-  const rows = (data ?? []) as SearchRpcRow[];
+  const { rows, total, interpretation } = await searchLicenseIds(client, rawQuery, offset, limit);
   const contractors = await hydrateContractors(client, rows.map((row) => Number(row.license_id)));
+  const ranks = new Map(rows.map((row) => [Number(row.license_id), row]));
   return {
-    total: Number(rows[0]?.total_count ?? 0),
-    results: contractors.map((contractor, index) => ({
+    total,
+    interpretation,
+    results: contractors.map((contractor) => ({
       contractor,
-      score: Number(rows[index]?.relevance_score ?? 0),
-      matchedBy: rows[index]?.matched_by?.map(String) ?? [],
+      score: Number(ranks.get(contractor.id)?.relevance_score ?? 0),
+      matchedBy: ranks.get(contractor.id)?.matched_by?.map(String) ?? [],
     })),
   };
 }

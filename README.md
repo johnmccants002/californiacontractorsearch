@@ -21,7 +21,7 @@ The initial application MVP and statewide CSLB import pipeline are complete. The
 
 ## Local setup
 
-Requirements: Node.js 20.9 or newer and npm.
+Requirements: Node.js 22 or newer and npm.
 
 ```bash
 npm install
@@ -78,6 +78,7 @@ npm run dev
 npm run build
 npm run lint
 npm test
+npm run test:integration
 npm run data:download
 npm run data:import
 npm run data:finalize
@@ -113,9 +114,21 @@ Search logic is kept out of page components:
 2. `normalize.ts` lowercases, removes punctuation, collapses whitespace, normalizes classification codes and initials, and removes common business prefixes/suffixes for comparison.
 3. `rank-results.ts` assigns centralized weights: exact license, exact/prefix business name, exact personnel, classification, ZIP/city, trigram-like fuzzy similarity, term coverage, trade names, then active status.
 4. `search-contractors.ts` performs pagination and offers classification filtering.
-5. `repository.ts` calls the paginated Supabase search RPC when configured and otherwise uses demo data.
+5. `trade-location.ts` recognizes trade/classification + city/ZIP phrases using the database classification catalog.
+6. `database-search.ts` protects exact business-name matches, resolves implicit cities, and applies strict classification/location filters; other queries use the existing search RPC.
+7. `repository.ts` hydrates only the current results page. `demo-search.ts` applies the same intent rules to offline data.
 
-PostgreSQL mirrors the important normalization rules and uses full-text and trigram GIN indexes. The repository hydrates only the page of license IDs returned by `search_license_ids_v2`, so searches do not load the statewide dataset into the application process.
+PostgreSQL mirrors the important normalization rules and uses full-text and trigram GIN indexes. The repository hydrates only the current page of IDs, so searches do not load the statewide dataset into the application process. Structured searches use the existing GIN index as a candidate prefilter, then verify classification membership and exact city/ZIP fields. This release needs no new migration.
+
+Examples: `plumbers in Sacramento`, `C-36 Sacramento`, `demolition in El Cerrito`, `plumbers in 95814`. Optional `CA`/`California` suffixes and city + ZIP are supported. Explicit location searches stay empty when there are no matches; they never silently broaden into statewide fuzzy matches. Trade-first phrases without `in` require a known city, and exact contractor names retain precedence. `1 Demolition` and license `1082303` still use name/license search.
+
+Location means **registered business location**, not service area or proximity. Radius/“near me” search, city misspelling correction, location-first phrases, and additional trade aliases are not part of this release. Alias coverage is driven by `classifications.aliases`; imported codes without aliases still work as classification-code searches.
+
+### Search verification
+
+`npm test` is offline and checks parsing, routing, strict filters, name protection, ranking, and pagination. `npm run test:integration` is opt-in: it loads `.env.local` (or environment variables) and runs read-only queries against the real imported CSLB database with `NEXT_PUBLIC_SUPABASE_ANON_KEY`, never the service-role key. It fails if those public credentials are missing. Use a database with the official statewide import, not the fictional seed records.
+
+The integration suite exercises the exact helper used in production, checks returned license classifications/cities/ZIPs, verifies `1 Demolition`/`1082303`, and tests deterministic pagination and empty searches. It avoids hard-coding statewide counts so data refreshes do not require rewriting assertions.
 
 ## Database model
 

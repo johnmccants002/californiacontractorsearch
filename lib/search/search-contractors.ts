@@ -5,8 +5,7 @@ import {
   getContractorsForClassificationFromDatabase,
   searchContractorsFromDatabase,
 } from "@/lib/contractors/repository";
-import { parseQuery } from "./parse-query";
-import { rankResults } from "./rank-results";
+import { searchDemoContractors } from "./demo-search";
 
 const DEFAULT_PAGE_SIZE = 10;
 
@@ -15,7 +14,6 @@ export async function searchContractors(
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
 ): Promise<PaginatedResults> {
-  const parsed = parseQuery(rawQuery);
   const safePage = Math.max(1, Math.floor(page) || 1);
   const safePageSize = Math.min(50, Math.max(1, Math.floor(pageSize) || DEFAULT_PAGE_SIZE));
   const start = (safePage - 1) * safePageSize;
@@ -29,11 +27,12 @@ export async function searchContractors(
       pageSize: safePageSize,
       totalPages: Math.max(1, Math.ceil(databaseResults.total / safePageSize)),
       source: "supabase",
+      interpretation: databaseResults.interpretation,
     };
   }
 
   const { contractors, source } = await getAllContractors();
-  const ranked = parsed.kind === "empty" ? [] : rankResults(contractors, parsed);
+  const { results: ranked, interpretation } = searchDemoContractors(contractors, rawQuery);
 
   return {
     results: ranked.slice(start, start + safePageSize),
@@ -42,6 +41,7 @@ export async function searchContractors(
     pageSize: safePageSize,
     totalPages: Math.max(1, Math.ceil(ranked.length / safePageSize)),
     source,
+    interpretation,
   };
 }
 
