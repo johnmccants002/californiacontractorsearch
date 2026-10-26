@@ -6,7 +6,7 @@ import { searchContractors } from "@/lib/search/search-contractors";
 
 export const metadata: Metadata = {
   title: "Search California Contractor Licenses",
-  description: "Search demonstration California contractor license records by name, license number, trade, city, ZIP, or classification.",
+  description: "Search California contractor license records by name, license number, trade, city, ZIP, or classification.",
   alternates: { canonical: "/search" },
 };
 
@@ -31,6 +31,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
             <header className="mt-10 border-b border-slate-200 pb-5">
               <p className="text-sm font-semibold text-blue-800">{data.total} {data.total === 1 ? "result" : "results"}</p>
               <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">Search results for “{query}”</h1>
+              {data.interpretation ? <p className="mt-3 text-sm text-slate-600">{data.interpretation}</p> : null}
               {data.source === "demo" ? <p className="mt-3 text-sm text-amber-800">Showing fictional demonstration records. Connect Supabase and load current public data before production use.</p> : null}
             </header>
 
