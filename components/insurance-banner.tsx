@@ -17,7 +17,7 @@ export function InsuranceBanner() {
             <p className="mt-1 text-base font-bold tracking-tight text-teal-950">Insurance &amp; bonds for California contractors</p>
             <p className="mt-1 text-sm leading-5 text-slate-600">
               <span className="font-semibold text-slate-800">Pro-Builders Insurance Agency</span>
-              <span className="hidden lg:inline"> · General liability, workers’ comp &amp; contractor bonds</span>
+              <span className="hidden lg:inline"> · General Liability, Workers’ Comp &amp; Contractor Bonds</span>
             </p>
           </div>
         </div>

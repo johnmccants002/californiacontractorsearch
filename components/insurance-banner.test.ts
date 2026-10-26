@@ -9,6 +9,7 @@ describe("insurance advertisement", () => {
     expect(html).toContain('aria-label="Advertisement: Pro-Builders Insurance Agency"');
     expect(html).toContain(">Advertisement</p>");
     expect(html).toContain("Pro-Builders Insurance Agency");
+    expect(html).toContain("General Liability, Workers’ Comp &amp; Contractor Bonds");
     expect(html).not.toMatch(/free insurance|official|recommended|endorsed/i);
   });
 
