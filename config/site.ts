@@ -4,6 +4,7 @@ export const siteConfig = {
   description:
     "Search California contractor licenses by name, license number, trade, classification, or location.",
   url: "https://californiacontractorsearch.com",
+  insuranceAdvertiserUrl: "https://insureprobuilders.com/",
   cisUrl:
     process.env.NEXT_PUBLIC_CIS_URL ??
     "https://www.contractorsischool.com/",

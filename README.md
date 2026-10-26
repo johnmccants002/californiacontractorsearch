@@ -106,6 +106,12 @@ supabase/
 
 Server Components are the default. Search and filters use URL query parameters and server rendering, so the core product does not require browser JavaScript.
 
+### Complimentary advertising
+
+A compact, clearly labeled Pro-Builders Insurance Agency advertisement appears beneath the site header on every page. Its button opens [insureprobuilders.com](https://insureprobuilders.com/) in a new tab, preserving the current search. The destination is configured by `insuranceAdvertiserUrl` in `config/site.ts`; the banner is in `components/insurance-banner.tsx` and mounted once in the root layout.
+
+This is complimentary placement, not an offer of free insurance. It does not affect search rankings, imply that listed contractors are insured by the advertiser, or replace the existing Contractors Intelligence School promotion. It adds no tracking scripts, pixels, remote assets, forms, cookies, or new dependencies.
+
 ## Search architecture
 
 Search logic is kept out of page components:

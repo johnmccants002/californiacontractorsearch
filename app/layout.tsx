@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { InsuranceBanner } from "@/components/insurance-banner";
 import { siteConfig } from "@/config/site";
 
 export const metadata: Metadata = {
@@ -31,6 +32,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" data-scroll-behavior="smooth">
       <body>
         <SiteHeader />
+        <InsuranceBanner />
         <main>{children}</main>
         <SiteFooter />
       </body>
