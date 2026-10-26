@@ -1,3 +1,5 @@
+import type { SearchState } from "@/lib/search/filters";
+
 export type LicenseStatus = "ACTIVE" | "EXPIRED" | "SUSPENDED" | "INACTIVE";
 
 export interface Classification {
@@ -72,6 +74,7 @@ export interface SearchResult {
 }
 
 export interface PaginatedResults {
+  state: SearchState;
   interpretation?: string;
   results: SearchResult[];
   total: number;

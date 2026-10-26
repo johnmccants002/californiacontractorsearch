@@ -3,108 +3,85 @@ import { describe, expect, it, vi } from "vitest";
 import { searchLicenseIds } from "./database-search";
 
 vi.mock("server-only", () => ({}));
-
 const catalog = [{ id: 5, code: "c36", name: "Plumbing Contractor", aliases: ["plumbing", "plumber", "plumbers"] }];
-const rpcRows = [{ license_id: 99, relevance_score: 800, matched_by: ["exact business name"], total_count: 1 }];
+const result = { rows: [{ license_id: 99, relevance_score: 800, matched_by: ["exact business name"] }], total: 255 };
 
-function fakeDatabase(responses: { data: unknown; status?: number; count?: number }[]) {
-  const urls: URL[] = [];
+function fakeDatabase(responses: { data: unknown; status?: number }[]) {
+  const requests: { url: URL; body: Record<string, unknown> }[] = [];
   const client = createClient("https://search.test", "public-test-key", {
     auth: { persistSession: false, autoRefreshToken: false },
-    global: { fetch: async (input) => {
-      urls.push(new URL(String(input)));
+    global: { fetch: async (input, init) => {
+      requests.push({ url: new URL(String(input)), body: init?.body ? JSON.parse(String(init.body)) : {} });
       const next = responses.shift();
       if (!next) throw new Error("Unexpected database request");
-      return new Response(JSON.stringify(next.data), {
-        status: next.status ?? 200,
-        headers: {
-          "content-type": "application/json",
-          ...(next.count !== undefined ? { "content-range": `0-9/${next.count}` } : {}),
-        },
-      });
+      return new Response(JSON.stringify(next.data), { status: next.status ?? 200, headers: { "content-type": "application/json" } });
     } },
   });
-  return { client, urls };
+  return { client, requests };
 }
 
 describe("production database query routing", () => {
-  it("does no database work for an empty query", async () => {
-    const { client, urls } = fakeDatabase([]);
-    expect(await searchLicenseIds(client, "  ", 0, 10)).toEqual({ rows: [], total: 0 });
-    expect(urls).toHaveLength(0);
+  it("does not enumerate licenses for an empty search", async () => {
+    const { client, requests } = fakeDatabase([]);
+    expect(await searchLicenseIds(client, " ", 0, 10)).toMatchObject({ rows: [], total: 0 });
+    expect(requests).toHaveLength(0);
   });
 
-  it.each(["1082303", "C-36", "95814"])("keeps %s on the existing RPC", async (query) => {
-    const { client, urls } = fakeDatabase([{ data: rpcRows }]);
+  it.each(["1082303", "C-36", "95814"])("preserves %s as a text/license lookup", async (query) => {
+    const { client, requests } = fakeDatabase([{ data: result }]);
     await searchLicenseIds(client, query, 0, 10);
-    expect(urls[0].pathname).toContain("/rpc/search_license_ids_v2");
+    expect(requests[0].url.pathname).toContain("/rpc/search_license_ids_v3");
+    expect(requests[0].body.search_query).toBe(query);
   });
 
-  it("protects exact trade-prefixed business names", async () => {
-    const { client, urls } = fakeDatabase([{ data: catalog }, { data: [{ id: 99 }] }, { data: rpcRows }]);
-    const result = await searchLicenseIds(client, "Plumbing Sacramento", 0, 10);
-    expect(result.interpretation).toBeUndefined();
-    expect(urls.at(-1)?.pathname).toContain("/rpc/search_license_ids_v2");
+  it("protects an exact trade-prefixed business name", async () => {
+    const { client, requests } = fakeDatabase([{ data: catalog }, { data: [{ id: 99 }] }, { data: result }]);
+    const found = await searchLicenseIds(client, "Plumbing Sacramento", 0, 10);
+    expect(found.state.query).toBe("Plumbing Sacramento");
+    expect(requests.at(-1)!.body.classification_filter).toBe("");
   });
 
-  it("falls back to names when an implicit location is not a known city", async () => {
-    const { client, urls } = fakeDatabase([{ data: catalog }, { data: [] }, { data: [] }, { data: rpcRows }]);
-    const result = await searchLicenseIds(client, "Plumbing Solutions", 0, 10);
-    expect(result.interpretation).toBeUndefined();
-    expect(urls.at(-1)?.pathname).toContain("/rpc/search_license_ids_v2");
+  it("keeps an unknown implicit city as a business lookup", async () => {
+    const { client, requests } = fakeDatabase([{ data: catalog }, { data: [] }, { data: [] }, { data: result }]);
+    await searchLicenseIds(client, "Plumbing Solutions", 0, 10);
+    expect(requests.at(-1)!.body.search_query).toBe("Plumbing Solutions");
   });
 
-  it("uses indexed candidates plus strict relational filters and stable pagination", async () => {
-    const { client, urls } = fakeDatabase([
-      { data: catalog }, { data: [] },
-      { data: [{ id: 42, license_status: "ACTIVE" }], count: 255 },
-    ]);
-    const result = await searchLicenseIds(client, "plumbers in Sacramento", 10, 10);
-    expect(result.total).toBe(255);
-    expect(result.rows[0].license_id).toBe(42);
-    const params = urls.at(-1)!.searchParams;
-    expect(params.get("search_vector")).toBe("fts(simple).c36 & sacramento");
-    expect(params.get("city")).toBe("ilike.sacramento");
-    expect(params.get("license_classifications.classification_id")).toBe("eq.5");
-    expect(params.get("select")).toContain("!inner");
-    expect(params.get("offset")).toBe("10");
-    expect(params.get("limit")).toBe("10");
-    expect(params.get("order")).toBe("license_status.asc,business_name_normalized.asc,id.asc");
+  it("converts natural-language terms to editable filters before pagination", async () => {
+    const { client, requests } = fakeDatabase([{ data: catalog }, { data: [] }, { data: result }]);
+    const found = await searchLicenseIds(client, "plumbers in Sacramento", 10, 10);
+    expect(found.total).toBe(255);
+    expect(found.state).toMatchObject({ query: "", filters: { classification: "c36", city: "sacramento", status: "" } });
+    expect(requests.at(-1)!.body).toMatchObject({ search_query: "", classification_filter: "c36", city_filter: "sacramento", result_offset: 10, result_limit: 10 });
   });
 
-  it("does not fall back to fuzzy matches when explicit filters return nothing", async () => {
-    const { client, urls } = fakeDatabase([{ data: catalog }, { data: [] }, { data: [], count: 0 }]);
-    const result = await searchLicenseIds(client, "plumbers in No Such City", 0, 10);
-    expect(result.total).toBe(0);
-    expect(result.interpretation).toBeDefined();
-    expect(urls.some((url) => url.pathname.includes("/rpc/"))).toBe(false);
+  it("explicit fields override inferred fields, including clearing a selection", async () => {
+    const { client, requests } = fakeDatabase([{ data: catalog }, { data: [] }, { data: result }]);
+    await searchLicenseIds(client, "plumbers in Sacramento", 0, 10, { city: "Roseville", classification: "", status: "ACTIVE", sort: "name" });
+    expect(requests.at(-1)!.body).toMatchObject({ search_query: "", classification_filter: "", city_filter: "roseville", status_filter: "ACTIVE", sort_order: "name" });
   });
 
-  it("uses an indexed ZIP prefix prefilter that supports ZIP+4 records", async () => {
-    const { client, urls } = fakeDatabase([{ data: catalog }, { data: [] }, { data: [], count: 0 }]);
-    await searchLicenseIds(client, "plumbers in 95814", 0, 10);
-    expect(urls.at(-1)!.searchParams.get("search_vector")).toBe("fts(simple).c36 & 95814:*");
-    expect(urls.at(-1)!.searchParams.get("zip")).toBe("like.95814%");
+  it("supports filter-only searches with a typed trade alias", async () => {
+    const { client, requests } = fakeDatabase([{ data: catalog }, { data: result }]);
+    await searchLicenseIds(client, "", 0, 10, { classification: "plumbing", zip: "95814" });
+    expect(requests.at(-1)!.body).toMatchObject({ search_query: "", classification_filter: "c36", zip_filter: "95814" });
   });
 
-  it("recovers the count for an out-of-range page without fetching every match", async () => {
-    const { client, urls } = fakeDatabase([
-      { data: catalog }, { data: [] },
-      { status: 416, data: { code: "PGRST103", message: "Requested range not satisfiable" } },
-      { data: [{ id: 1, license_status: "ACTIVE" }], count: 255 },
-    ]);
-    const result = await searchLicenseIds(client, "plumbers in Sacramento", 1000, 10);
-    expect(result.rows).toEqual([]);
-    expect(result.total).toBe(255);
-    expect(urls.at(-1)!.searchParams.get("offset")).toBe("0");
-    expect(urls.at(-1)!.searchParams.get("limit")).toBe("1");
+  it("does not broaden an explicitly empty location result", async () => {
+    const { client, requests } = fakeDatabase([{ data: catalog }, { data: [] }, { data: { rows: [], total: 0 } }]);
+    const found = await searchLicenseIds(client, "plumbers in No Such City", 0, 10);
+    expect(found.total).toBe(0);
+    expect(found.interpretation).toBeDefined();
+    expect(requests).toHaveLength(3);
   });
 
-  it("surfaces database errors instead of hiding them with demo or fuzzy results", async () => {
-    const { client } = fakeDatabase([
-      { data: catalog }, { data: [] },
-      { status: 500, data: { message: "query failed", code: "57014" } },
-    ]);
-    await expect(searchLicenseIds(client, "plumbers in Sacramento", 0, 10)).rejects.toThrow("query failed");
+  it("preserves the total even when the requested page is empty", async () => {
+    const { client } = fakeDatabase([{ data: { rows: [], total: 255 } }]);
+    expect(await searchLicenseIds(client, "", 500, 10, { status: "ACTIVE" })).toMatchObject({ rows: [], total: 255 });
+  });
+
+  it("surfaces database failures", async () => {
+    const { client } = fakeDatabase([{ status: 500, data: { code: "57014", message: "query failed" } }]);
+    await expect(searchLicenseIds(client, "1082303", 0, 10)).rejects.toThrow("query failed");
   });
 });
