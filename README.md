@@ -157,7 +157,21 @@ Stable natural keys and unique constraints allow future imports to upsert record
 
 ## SEO and machine readability
 
-The app includes canonical metadata, Open Graph defaults, dynamic license/classification titles, `robots.txt`, `sitemap.xml`, semantic fact sections, deterministic summaries, source dates, and `Organization`/`LocalBusiness` JSON-LD using only stored facts.
+The app includes canonical metadata, Open Graph defaults, dynamic license/classification titles, `robots.txt`, semantic fact sections, and `Organization`/`LocalBusiness` JSON-LD for imported records only.
+
+### Source disclosure and verification
+
+The homepage checks the connected dataset before describing its source. Imported profiles display **Source: CSLB public records**, a **Source record updated** date, and a prominent official CSLB lookup link with the license number to enter. The date comes from the export's `LastUpdate` field, not the import run or a live verification. Missing source dates remain explicitly unavailable.
+
+Offline demo records and recognizable SQL seed records are labeled fictional, excluded from indexing, and never receive business JSON-LD. Rows without the importer's `source_status` provenance are marked unconfirmed and excluded from indexing. Imported records that reuse a demo license number are not excluded just because of that number. Database failures throw instead of substituting fictional profiles; license pages offer a retry and the official lookup. Search results are `noindex, follow` so filtered result URLs do not compete with canonical profiles.
+
+### Live sitemap
+
+`/sitemap.xml` is a sitemap index, still advertised in `robots.txt`. It references `/sitemaps/pages.xml` (the homepage and supported classification pages) and `/sitemaps/licenses-N.xml` files containing imported contractor profiles. License files use stable, half-open 10,000-ID windows and ordered keyset pagination in at most 1,000-row requests. This avoids the API row cap and deep offsets, keeps every file below 50,000 URLs, and allows sparse ID windows without shifting other files. Only the small sitemap fields are selected; profile joins are not loaded. No database migration or elevated database permissions are needed.
+
+Successful XML responses are eligible for one hour of shared-cache reuse. API failures return an uncached `503` with `Retry-After`, never a successful demo/partial sitemap. Demo mode publishes no contractor URLs; unknown or empty datasets do not advertise directory pages. License `lastmod` uses a valid source-record timestamp; no dates are fabricated for static pages. Tests cover short API pages, adjacent windows, source exclusions, failure responses, and read-only public-key access.
+
+After deployment, submit `https://californiacontractorsearch.com/sitemap.xml` to Google Search Console. Submission and indexing are separate external steps; a sitemap does not guarantee indexing.
 
 ## CSLB data refresh design
 

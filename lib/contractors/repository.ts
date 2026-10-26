@@ -1,10 +1,12 @@
 import "server-only";
+import { cache } from "react";
 import { classifications, demoContractors, findDemoContractor } from "./demo-data";
 import type { Classification, Contractor, LicenseStatus } from "./types";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { searchLicenseIds } from "@/lib/search/database-search";
 import type { FilterInput, SearchState } from "@/lib/search/filters";
 import type { SearchClassification } from "@/lib/search/trade-location";
+import { recordSource, type DatasetSource } from "./provenance";
 
 const CONTRACTOR_SELECT = `
   *,
@@ -39,6 +41,7 @@ function mapContractor(row: DbRow): Contractor {
   const workersComp = (row.workers_comp as DbRow[] | null) ?? [];
 
   return {
+    dataSource: recordSource({ license_number: row.license_number, business_name: row.business_name, source_status: row.source_status }),
     id: Number(row.id),
     licenseNumber: String(row.license_number),
     businessName: String(row.business_name),
@@ -168,15 +171,12 @@ export async function getAllContractors(): Promise<{ contractors: Contractor[]; 
   if (!client) return { contractors: demoContractors, source: "demo" };
 
   const { data, error } = await client.from("licenses").select(CONTRACTOR_SELECT);
-  if (error) {
-    console.error("Supabase contractor query failed; using demo data:", error.message);
-    return { contractors: demoContractors, source: "demo" };
-  }
+  if (error) throw new Error(`Supabase contractor query failed: ${error.message}`);
 
   return { contractors: (data as DbRow[]).map(mapContractor), source: "supabase" };
 }
 
-export async function getContractorByLicense(licenseNumber: string): Promise<Contractor | undefined> {
+export const getContractorByLicense = cache(async (licenseNumber: string): Promise<Contractor | undefined> => {
   const client = createServerSupabaseClient();
   if (!client) return findDemoContractor(licenseNumber);
 
@@ -186,9 +186,25 @@ export async function getContractorByLicense(licenseNumber: string): Promise<Con
     .eq("license_number", licenseNumber)
     .maybeSingle();
 
-  if (error) {
-    console.error("Supabase license query failed; using demo data:", error.message);
-    return findDemoContractor(licenseNumber);
-  }
+  if (error) throw new Error(`Supabase license query failed: ${error.message}`);
   return data ? mapContractor(data as DbRow) : undefined;
-}
+});
+
+export const getDatasetSource = cache(async (): Promise<DatasetSource> => {
+  const client = createServerSupabaseClient();
+  if (!client) return "demo";
+  try {
+    const imported = await client.from("licenses")
+      .select("license_number, business_name, source_status")
+      .not("source_status", "is", null).neq("source_status", "")
+      .order("id").limit(1);
+    if (imported.error) return "unavailable";
+    if (imported.data?.length) return recordSource(imported.data[0]);
+    const sample = await client.from("licenses")
+      .select("license_number, business_name, source_status").order("id").limit(1);
+    if (sample.error) return "unavailable";
+    return sample.data?.length ? recordSource(sample.data[0]) : "empty";
+  } catch {
+    return "unavailable";
+  }
+});

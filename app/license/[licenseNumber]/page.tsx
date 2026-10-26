@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { StatusBadge } from "@/components/license/status-badge";
+import { LicenseVerification } from "@/components/data-source";
 import { getContractorByLicense } from "@/lib/contractors/repository";
 import { displayClassificationCode } from "@/lib/search/normalize";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -12,12 +13,13 @@ type PageProps = { params: Promise<{ licenseNumber: string }> };
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { licenseNumber } = await params;
   const contractor = await getContractorByLicense(licenseNumber);
-  if (!contractor) return { title: "License not found" };
+  if (!contractor) return { title: "License not found", robots: { index: false, follow: true } };
   const title = `${contractor.businessName} | California Contractor License #${contractor.licenseNumber}`;
   return {
     title: { absolute: title },
     description: `${contractor.businessName} is listed in ${contractor.city}, California with contractor license #${contractor.licenseNumber}. View status, classifications, personnel, bond, and workers' compensation details.`,
     alternates: { canonical: `/license/${contractor.licenseNumber}` },
+    robots: { index: contractor.dataSource === "cslb", follow: true },
     openGraph: { title, description: `California contractor license profile for ${contractor.businessName}.`, type: "profile" },
   };
 }
@@ -49,7 +51,7 @@ export default async function LicensePage({ params }: PageProps) {
 
   return (
     <div className="page-shell py-10 sm:py-14">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
+      {contractor.dataSource === "cslb" ? <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} /> : null}
       <div className="mx-auto max-w-4xl">
         <nav aria-label="Breadcrumb" className="text-sm text-slate-500">
           <Link href="/" className="hover:text-blue-900">Home</Link> <span aria-hidden="true">/</span> <span>License #{contractor.licenseNumber}</span>
@@ -63,8 +65,9 @@ export default async function LicensePage({ params }: PageProps) {
             </div>
             <StatusBadge status={contractor.licenseStatus} />
           </div>
+          <LicenseVerification contractor={contractor} />
           <p className="mt-6 max-w-3xl border-t border-slate-200 pt-6 leading-7 text-slate-700">
-            {contractor.businessName} is a California contractor based in {contractor.city}. The company holds California contractor license #{contractor.licenseNumber} and is currently listed as {contractor.licenseStatus} in this site&apos;s dataset.
+            {contractor.dataSource === "cslb" ? `${contractor.businessName} is listed in the imported CSLB records with a business address in ${contractor.city}, ${contractor.state}. License #${contractor.licenseNumber} is recorded as ${contractor.licenseStatus} in this dataset.` : `This ${contractor.dataSource === "demo" ? "demonstration" : "unconfirmed"} profile shows ${contractor.businessName} and license number ${contractor.licenseNumber}. It is not verification of a real contractor's license.`}
           </p>
         </header>
 
@@ -136,8 +139,7 @@ export default async function LicensePage({ params }: PageProps) {
           </div>
 
           <ProfileSection title="Source and verification">
-            <p className="leading-7 text-slate-700">Contractor license information is intended to be sourced from public California Contractors State License Board records. This MVP ships with fictional demonstration records until the public-data import is connected.</p>
-            <p className="mt-3 text-sm font-medium text-slate-700">Data last updated: {formatDate(contractor.sourceUpdatedAt)}</p>
+            <p className="leading-7 text-slate-700">{contractor.dataSource === "cslb" ? "This profile uses imported public California Contractors State License Board records. The source record date is shown above; it is not the date of a live verification or a guarantee that every detail is current." : contractor.dataSource === "demo" ? "This is a fictional demonstration profile. Its names, dates, and other details are sample data, not imported CSLB facts." : "The origin of this record has not been confirmed. Verify all license information directly with CSLB."}</p>
             <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm leading-6 text-amber-950">License status may change. Verify current information directly with CSLB before making important decisions.</p>
             <a href={siteConfig.cslbLookupUrl} target="_blank" rel="noreferrer" className="button-secondary mt-5">Verify with official CSLB lookup ↗</a>
           </ProfileSection>

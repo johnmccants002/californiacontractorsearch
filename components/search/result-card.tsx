@@ -14,6 +14,7 @@ export function ResultCard({ contractor, matchedBy }: { contractor: Contractor; 
         <div>
           <h2 className="text-xl font-semibold tracking-tight text-slate-950 group-hover:text-blue-900">{contractor.businessName}</h2>
           <p className="mt-1 font-mono text-sm text-slate-600">License #{contractor.licenseNumber}</p>
+          {contractor.dataSource !== "cslb" ? <p className="mt-2 text-xs font-semibold text-amber-800">{contractor.dataSource === "demo" ? "Fictional demonstration record" : "Record source unconfirmed"}</p> : null}
         </div>
         <StatusBadge status={contractor.licenseStatus} />
       </div>

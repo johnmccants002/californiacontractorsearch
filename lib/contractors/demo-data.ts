@@ -131,6 +131,7 @@ export const demoContractors: Contractor[] = rows.map((row, index) => {
   const recordId = index + 1;
 
   return {
+    dataSource: "demo",
     id: recordId,
     licenseNumber,
     businessName,

@@ -1,0 +1,60 @@
+import { createClient } from "@supabase/supabase-js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getAllContractors, getContractorByLicense, getDatasetSource } from "./repository";
+import { recordSource, sourceDate } from "./provenance";
+
+vi.mock("server-only", () => ({}));
+vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn() }));
+
+function database(data: unknown, status = 200) {
+  return createClient("https://records.test", "test-public-key", { auth: { persistSession: false }, global: {
+    fetch: async () => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } }),
+  } });
+}
+
+beforeEach(() => vi.clearAllMocks());
+
+describe("record provenance", () => {
+  it("distinguishes actual import markers, demo seeds, and unknown records", () => {
+    expect(recordSource({ license_number: "1056730", business_name: "ABC Plumbing Inc." })).toBe("demo");
+    expect(recordSource({ license_number: "1056730", business_name: "Actual business", source_status: "CLEAR" })).toBe("cslb");
+    expect(recordSource({ license_number: "1", business_name: "Unknown" })).toBe("unknown");
+  });
+  it("never invents a source timestamp", () => {
+    expect(sourceDate(null)).toBeUndefined();
+    expect(sourceDate("invalid")).toBeUndefined();
+    expect(sourceDate("2025-12-11T00:00:00+00:00")).toBe("2025-12-11T00:00:00.000Z");
+  });
+});
+
+describe("source-aware repository", () => {
+  it("uses labeled demo data only without a configured database", async () => {
+    vi.mocked(createServerSupabaseClient).mockReturnValue(null);
+    expect(await getDatasetSource()).toBe("demo");
+    expect((await getContractorByLicense("1056730"))?.dataSource).toBe("demo");
+  });
+  it("maps live records to their actual source", async () => {
+    vi.mocked(createServerSupabaseClient).mockReturnValue(database({ id: 1, license_number: "1082303", business_name: "1 DEMOLITION", source_status: "CLEAR" }));
+    expect((await getContractorByLicense("1082303"))?.dataSource).toBe("cslb");
+  });
+  it("does not substitute a demo when a real record is absent", async () => {
+    vi.mocked(createServerSupabaseClient).mockReturnValue(database(null));
+    expect(await getContractorByLicense("1056730")).toBeUndefined();
+  });
+  it("fails visibly rather than substituting demo data on database errors", async () => {
+    vi.mocked(createServerSupabaseClient).mockReturnValue(database({ message: "Database unavailable" }, 400));
+    await expect(getContractorByLicense("1056730")).rejects.toThrow("license query failed");
+    await expect(getAllContractors()).rejects.toThrow("contractor query failed");
+    expect(await getDatasetSource()).toBe("unavailable");
+  });
+  it.each([
+    [[], "empty"],
+    [[{ license_number: "1082303", business_name: "1 DEMOLITION", source_status: "CLEAR" }], "cslb"],
+    [[{ license_number: "1056730", business_name: "ABC Plumbing Inc." }], "demo"],
+    [[{ license_number: "1", business_name: "Unconfirmed" }], "unknown"],
+  ])("describes the actual connected dataset", async (data, source) => {
+    vi.mocked(createServerSupabaseClient).mockReturnValue(database(data));
+    expect(await getDatasetSource()).toBe(source);
+  });
+});
