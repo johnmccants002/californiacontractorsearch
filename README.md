@@ -113,12 +113,20 @@ Search logic is kept out of page components:
 1. `parse-query.ts` detects license number, ZIP, classification, or general text.
 2. `normalize.ts` lowercases, removes punctuation, collapses whitespace, normalizes classification codes and initials, and removes common business prefixes/suffixes for comparison.
 3. `rank-results.ts` assigns centralized weights: exact license, exact/prefix business name, exact personnel, classification, ZIP/city, trigram-like fuzzy similarity, term coverage, trade names, then active status.
-4. `search-contractors.ts` performs pagination and offers classification filtering.
+4. `search-contractors.ts` performs pagination and supports explicit search filters.
 5. `trade-location.ts` recognizes trade/classification + city/ZIP phrases using the database classification catalog.
-6. `database-search.ts` protects exact business-name matches, resolves implicit cities, and applies strict classification/location filters; other queries use the existing search RPC.
+6. `filters.ts` normalizes and validates explicit filters, resolves inferred filters, and builds shareable URLs. `database-search.ts` protects exact business-name matches, resolves implicit cities, and passes the resolved state to `search_license_ids_v3`.
 7. `repository.ts` hydrates only the current results page. `demo-search.ts` applies the same intent rules to offline data.
 
-PostgreSQL mirrors the important normalization rules and uses full-text and trigram GIN indexes. The repository hydrates only the current page of IDs, so searches do not load the statewide dataset into the application process. Structured searches use the existing GIN index as a candidate prefilter, then verify classification membership and exact city/ZIP fields. This release needs no new migration.
+PostgreSQL mirrors the important normalization rules and uses full-text and trigram GIN indexes. The repository hydrates only the current page of IDs, so searches do not load the statewide dataset into the application process. Structured searches use the GIN index as a candidate prefilter, then verify classification membership and exact city/ZIP fields.
+
+### Search filters
+
+The main search page supports trade/classification (searchable suggestions), registered city, five-digit ZIP, license status, and relevance or name A–Z sorting. Any status is the default; inactive records remain discoverable. Filters work with or without search text and apply before counting, sorting, and pagination. ZIP filters include ZIP+4 source values. City matching is case-insensitive and exact, not a service-area search.
+
+Natural-language searches populate editable filters. Explicit selections take precedence. Removable chips and **Clear filters** reset pagination; removing an inferred chip does not infer it again from the original phrase. URLs preserve filters and sorting across pages. Mobile controls are collapsible; without JavaScript they remain visible.
+
+Apply `20261026053344_add_filtered_contractor_search.sql` before deploying this UI. It adds two covering sort indexes and the read-only `search_license_ids_v3` function, leaves previous search functions intact, uses `SECURITY INVOKER` with a pinned search path, and grants execution to the existing public API roles. On a live database, build the two indexes with `CONCURRENTLY` in separate statements first, as noted in the migration. Contractor records and RLS policies are unchanged. If a migration was applied manually in the dashboard, reconcile the CLI migration history before a future `db push`.
 
 Examples: `plumbers in Sacramento`, `C-36 Sacramento`, `demolition in El Cerrito`, `plumbers in 95814`. Optional `CA`/`California` suffixes and city + ZIP are supported. Explicit location searches stay empty when there are no matches; they never silently broaden into statewide fuzzy matches. Trade-first phrases without `in` require a known city, and exact contractor names retain precedence. `1 Demolition` and license `1082303` still use name/license search.
 
@@ -128,7 +136,7 @@ Location means **registered business location**, not service area or proximity. 
 
 `npm test` is offline and checks parsing, routing, strict filters, name protection, ranking, and pagination. `npm run test:integration` is opt-in: it loads `.env.local` (or environment variables) and runs read-only queries against the real imported CSLB database with `NEXT_PUBLIC_SUPABASE_ANON_KEY`, never the service-role key. It fails if those public credentials are missing. Use a database with the official statewide import, not the fictional seed records.
 
-The integration suite exercises the exact helper used in production, checks returned license classifications/cities/ZIPs, verifies `1 Demolition`/`1082303`, and tests deterministic pagination and empty searches. It avoids hard-coding statewide counts so data refreshes do not require rewriting assertions.
+The integration suite exercises the exact helper used in production, checks returned license classifications/cities/ZIPs/statuses, verifies `1 Demolition`/`1082303`, and tests explicit overrides, name sorting, deterministic pagination, empty searches, and non-active license discovery. It avoids hard-coding statewide counts so data refreshes do not require rewriting assertions.
 
 ## Database model
 

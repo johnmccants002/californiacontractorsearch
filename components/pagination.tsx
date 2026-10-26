@@ -1,8 +1,9 @@
 import Link from "next/link";
+import { searchHref, type SearchState } from "@/lib/search/filters";
 
-export function Pagination({ page, totalPages, query }: { page: number; totalPages: number; query: string }) {
+export function Pagination({ page, totalPages, state }: { page: number; totalPages: number; state: SearchState }) {
   if (totalPages <= 1) return null;
-  const makeHref = (nextPage: number) => `/search?q=${encodeURIComponent(query)}&page=${nextPage}`;
+  const makeHref = (nextPage: number) => searchHref(state, nextPage);
 
   return (
     <nav aria-label="Search results pages" className="mt-8 flex items-center justify-between border-t border-slate-200 pt-5">

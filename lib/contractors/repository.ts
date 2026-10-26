@@ -1,8 +1,10 @@
 import "server-only";
-import { demoContractors, findDemoContractor } from "./demo-data";
+import { classifications, demoContractors, findDemoContractor } from "./demo-data";
 import type { Classification, Contractor, LicenseStatus } from "./types";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { searchLicenseIds } from "@/lib/search/database-search";
+import type { FilterInput, SearchState } from "@/lib/search/filters";
+import type { SearchClassification } from "@/lib/search/trade-location";
 
 const CONTRACTOR_SELECT = `
   *,
@@ -106,26 +108,38 @@ export async function searchContractorsFromDatabase(
   rawQuery: string,
   offset: number,
   limit: number,
+  filters: FilterInput = {},
+  catalog?: SearchClassification[],
 ): Promise<{
   results: { contractor: Contractor; score: number; matchedBy: string[] }[];
   total: number;
   interpretation?: string;
+  state: SearchState;
 } | null> {
   const client = createServerSupabaseClient();
   if (!client) return null;
 
-  const { rows, total, interpretation } = await searchLicenseIds(client, rawQuery, offset, limit);
+  const { rows, total, interpretation, state } = await searchLicenseIds(client, rawQuery, offset, limit, filters, catalog);
   const contractors = await hydrateContractors(client, rows.map((row) => Number(row.license_id)));
   const ranks = new Map(rows.map((row) => [Number(row.license_id), row]));
   return {
     total,
     interpretation,
+    state,
     results: contractors.map((contractor) => ({
       contractor,
       score: Number(ranks.get(contractor.id)?.relevance_score ?? 0),
       matchedBy: ranks.get(contractor.id)?.matched_by?.map(String) ?? [],
     })),
   };
+}
+
+export async function getSearchClassifications(): Promise<SearchClassification[]> {
+  const client = createServerSupabaseClient();
+  if (!client) return classifications;
+  const { data, error } = await client.from("classifications").select("id, code, name, aliases").order("code");
+  if (error) throw new Error(`Supabase classification lookup failed: ${error.message}`);
+  return (data ?? []) as SearchClassification[];
 }
 
 export async function getContractorsForClassificationFromDatabase(
