@@ -1,9 +1,19 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+import { DatasetNotice } from "@/components/data-source";
+import { getDatasetSource } from "@/lib/contractors/repository";
 import { SearchForm } from "@/components/search/search-form";
 import { Sponsorship } from "@/components/sponsorship";
 import { featuredClassifications, siteConfig } from "@/config/site";
 
-export default function HomePage() {
+export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  return { robots: { index: await getDatasetSource() === "cslb", follow: true } };
+}
+
+export default async function HomePage() {
+  const source = await getDatasetSource();
   return (
     <>
       <section className="border-b border-slate-200 bg-white">
@@ -32,9 +42,7 @@ export default function HomePage() {
             <p>
               Search license information using a business name, license number, associated individual, classification, city, or ZIP code. You can also combine terms, such as <span className="font-medium text-slate-900">plumbers Sacramento</span>.
             </p>
-            <p>
-              This initial release uses clearly labeled demonstration records while the CSLB public-data import is prepared.
-            </p>
+            <DatasetNotice source={source} />
           </div>
         </section>
 

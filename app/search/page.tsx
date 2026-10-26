@@ -12,6 +12,7 @@ export const metadata: Metadata = {
   title: "Search California Contractor Licenses",
   description: "Search California contractor license records by name, license number, trade, city, ZIP, or classification.",
   alternates: { canonical: "/search" },
+  robots: { index: false, follow: true },
 };
 
 export default async function SearchPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {

@@ -6,6 +6,7 @@ import { Sponsorship } from "@/components/sponsorship";
 import { findClassification } from "@/lib/contractors/demo-data";
 import { getContractorsForClassification } from "@/lib/search/search-contractors";
 import { displayClassificationCode } from "@/lib/search/normalize";
+import { getDatasetSource } from "@/lib/contractors/repository";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -21,6 +22,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     title: { absolute: `${code} ${classification.name.replace(" Contractor", "")}s in California | Contractor Search` },
     description: `Search ${code} ${classification.name.toLowerCase()} license records across California. Filter by business name, city, ZIP, and license status.`,
     alternates: { canonical: `/classification/${classification.slug}` },
+    robots: { index: await getDatasetSource() === "cslb", follow: true },
   };
 }
 

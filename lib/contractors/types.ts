@@ -1,6 +1,7 @@
 import type { SearchState } from "@/lib/search/filters";
 
 export type LicenseStatus = "ACTIVE" | "EXPIRED" | "SUSPENDED" | "INACTIVE";
+export type RecordSource = "cslb" | "demo" | "unknown";
 
 export interface Classification {
   id: number;
@@ -43,6 +44,7 @@ export interface WorkersCompRecord {
 }
 
 export interface Contractor {
+  dataSource: RecordSource;
   id: number;
   licenseNumber: string;
   businessName: string;
