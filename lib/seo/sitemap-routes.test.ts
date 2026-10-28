@@ -4,11 +4,14 @@ import { GET as shard } from "@/app/sitemaps/[name]/route";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getDatasetSource } from "@/lib/contractors/repository";
 import { getLicenseSitemapEntries, getSitemapBounds } from "./sitemap-data";
+import { getAvailableTradeCityPages } from "./trade-city-data";
+import { tradeCityPages } from "./directory-pages";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn() }));
 vi.mock("@/lib/contractors/repository", () => ({ getDatasetSource: vi.fn() }));
 vi.mock("./sitemap-data", () => ({ getLicenseSitemapEntries: vi.fn(), getSitemapBounds: vi.fn() }));
+vi.mock("./trade-city-data", () => ({ getAvailableTradeCityPages: vi.fn() }));
 
 const request = new Request("https://californiacontractorsearch.com/sitemaps/pages.xml");
 const params = (name: string) => ({ params: Promise.resolve({ name }) });
@@ -16,6 +19,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(createServerSupabaseClient).mockReturnValue({} as NonNullable<ReturnType<typeof createServerSupabaseClient>>);
   vi.mocked(getSitemapBounds).mockResolvedValue({ first: 0, last: 2 });
+  vi.mocked(getAvailableTradeCityPages).mockResolvedValue([]);
 });
 
 describe("sitemap HTTP behavior", () => {
@@ -52,5 +56,23 @@ describe("sitemap HTTP behavior", () => {
   it("does not cache dataset outages as an empty pages sitemap", async () => {
     vi.mocked(getDatasetSource).mockResolvedValue("unavailable");
     expect((await shard(request, params("pages.xml"))).status).toBe(503);
+  });
+  it("adds only populated curated pages to the pages sitemap", async () => {
+    vi.mocked(getDatasetSource).mockResolvedValue("cslb");
+    vi.mocked(getAvailableTradeCityPages).mockResolvedValue([tradeCityPages[0]]);
+    const result = await shard(request, params("pages.xml"));
+    expect(result.status).toBe(200);
+    const xml = await result.text();
+    expect(xml).toContain("/contractors/plumbing/sacramento");
+    expect(xml).not.toContain("/contractors/electrical/los-angeles");
+    expect(xml).not.toContain("/search");
+  });
+  it("returns a retryable failure rather than a partially populated pages sitemap", async () => {
+    vi.mocked(getDatasetSource).mockResolvedValue("cslb");
+    vi.mocked(getAvailableTradeCityPages).mockRejectedValue(new Error("private database error"));
+    const result = await shard(request, params("pages.xml"));
+    expect(result.status).toBe(503);
+    expect(result.headers.get("cache-control")).toBe("no-store");
+    expect(await result.text()).not.toContain("private database error");
   });
 });

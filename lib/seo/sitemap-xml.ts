@@ -17,10 +17,10 @@ export function sitemapIndexXml(bounds: SitemapBounds | null): string {
   return `${declaration}<sitemapindex ${namespace}>${urls.map((url) => `<sitemap><loc>${escapeXml(url)}</loc></sitemap>`).join("")}</sitemapindex>`;
 }
 
-export function pageSitemapXml(includeDirectory: boolean): string {
+export function pageSitemapXml(includeDirectory: boolean, tradeCityPaths: readonly string[] = []): string {
   // These are the real editorial classification pages supported by the route,
   // not the broader database catalog (which would include nonexistent pages).
-  const paths = includeDirectory ? ["", ...classifications.map((item) => `/classification/${item.slug}`)] : [];
+  const paths = includeDirectory ? ["", ...classifications.map((item) => `/classification/${item.slug}`), ...tradeCityPaths] : [];
   return `${declaration}<urlset ${namespace}>${paths.map((path) => `<url><loc>${escapeXml(`${siteConfig.url}${path}`)}</loc></url>`).join("")}</urlset>`;
 }
 

@@ -2,17 +2,20 @@ import type { LicenseStatus } from "@/lib/contractors/types";
 import { normalizeClassificationCode, normalizeText } from "./normalize";
 import type { TradeLocationQuery } from "./trade-location";
 import type { SearchClassification } from "./trade-location";
+import { hasGeoInput, type GeoFilter } from "./geo";
 
 export class SearchInputError extends Error {}
 
 export const LICENSE_STATUSES: LicenseStatus[] = ["ACTIVE", "EXPIRED", "SUSPENDED", "INACTIVE"];
-export type FilterInput = Partial<Record<"classification" | "city" | "zip" | "status" | "sort", string>>;
+export type FilterInput = Partial<Record<"classification" | "city" | "county" | "zip" | "status" | "sort" | "lat" | "lng" | "radius", string>>;
 export interface SearchFilters {
   classification: string;
   city: string;
+  county?: string;
   zip: string;
   status: LicenseStatus | "";
-  sort: "relevance" | "name";
+  sort: "relevance" | "name" | "distance";
+  geo?: GeoFilter;
 }
 export interface SearchState {
   query: string;
@@ -21,7 +24,7 @@ export interface SearchState {
 
 /** Empty GET form controls mean “not selected,” not an override of a new phrase. */
 export function readFilterParams(params: Record<string, string | string[] | undefined>): FilterInput {
-  return Object.fromEntries(["classification", "city", "zip", "status", "sort"].flatMap((key) => {
+  return Object.fromEntries(["classification", "city", "county", "zip", "status", "sort", "lat", "lng", "radius"].flatMap((key) => {
     const value = params[key];
     return typeof value === "string" && value.trim() ? [[key, value]] : [];
   }));
@@ -32,13 +35,23 @@ export function normalizeFilters(input: FilterInput = {}): SearchFilters {
   const zip = input.zip?.trim() ?? "";
   if (status && !LICENSE_STATUSES.includes(status as LicenseStatus)) throw new SearchInputError("Choose a valid license status.");
   if (zip && !/^\d{5}$/.test(zip)) throw new SearchInputError("Enter a five-digit ZIP code.");
-  if (input.sort && !["relevance", "name"].includes(input.sort)) throw new SearchInputError("Choose a valid sort order.");
+  if (input.sort && !["relevance", "name", "distance"].includes(input.sort)) throw new SearchInputError("Choose a valid sort order.");
+  let geo: GeoFilter | undefined;
+  if (hasGeoInput(input)) {
+    const numeric = (value?: string) => Boolean(value?.trim() && /^-?\d+(?:\.\d+)?$/.test(value.trim()));
+    const latitude = Number(input.lat), longitude = Number(input.lng), radius = Number(input.radius);
+    if (!numeric(input.lat) || !numeric(input.lng) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) throw new SearchInputError("Enter a valid center latitude and longitude for location search.");
+    if (input.radius?.trim() && (!numeric(input.radius) || radius < 0.1 || radius > 250)) throw new SearchInputError("Choose a radius between 0.1 and 250 miles.");
+    geo = { latitude, longitude, ...(input.radius?.trim() ? { radiusMiles: radius } : {}) };
+  }
   return {
     classification: normalizeClassificationCode(input.classification ?? ""),
     city: normalizeText(input.city ?? ""),
+    ...(input.county?.trim() ? { county: normalizeText(input.county) } : {}),
     zip,
     status: status as LicenseStatus | "",
-    sort: input.sort === "name" ? "name" : "relevance",
+    sort: input.sort === "name" || input.sort === "distance" ? input.sort : "relevance",
+    ...(geo ? { geo } : {}),
   };
 }
 
@@ -61,21 +74,26 @@ export function validateClassification(input: FilterInput, catalog: SearchClassi
 }
 
 export function hasSearchFilters(filters: SearchFilters): boolean {
-  return Boolean(filters.classification || filters.city || filters.zip || filters.status);
+  return Boolean(filters.classification || filters.city || filters.county || filters.zip || filters.status || filters.geo);
 }
 
 export function searchHref(state: SearchState, page = 1): string {
   const params = new URLSearchParams();
   if (state.query) params.set("q", state.query);
-  for (const name of ["classification", "city", "zip", "status"] as const) {
+  for (const name of ["classification", "city", "county", "zip", "status"] as const) {
     if (state.filters[name]) params.set(name, state.filters[name]);
   }
   if (state.filters.sort !== "relevance") params.set("sort", state.filters.sort);
+  if (state.filters.geo) {
+    params.set("lat", String(state.filters.geo.latitude)); params.set("lng", String(state.filters.geo.longitude));
+    if (state.filters.geo.radiusMiles !== undefined) params.set("radius", String(state.filters.geo.radiusMiles));
+  }
   if (page > 1) params.set("page", String(page));
   return `/search${params.size ? `?${params}` : ""}`;
 }
 
 export function removeFilterHref(state: SearchState, name: keyof SearchFilters): string {
+  if (name === "geo") return searchHref({ ...state, filters: { ...state.filters, geo: undefined, sort: state.filters.sort === "distance" ? "relevance" : state.filters.sort } });
   return searchHref({ ...state, filters: { ...state.filters, [name]: name === "sort" ? "relevance" : "" } });
 }
 

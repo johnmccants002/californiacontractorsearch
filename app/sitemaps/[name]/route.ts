@@ -2,6 +2,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getDatasetSource } from "@/lib/contractors/repository";
 import { getLicenseSitemapEntries, getSitemapBounds } from "@/lib/seo/sitemap-data";
 import { licenseSitemapXml, pageSitemapXml, sitemapUnavailable, xmlResponse } from "@/lib/seo/sitemap-xml";
+import { getAvailableTradeCityPages } from "@/lib/seo/trade-city-data";
+import { tradeCityPath } from "@/lib/seo/directory-pages";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +15,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ nam
     if (name === "pages.xml") {
       const source = await getDatasetSource();
       if (source === "unavailable") return sitemapUnavailable();
-      return xmlResponse(pageSitemapXml(source === "cslb"));
+      const pages = source === "cslb" ? await getAvailableTradeCityPages() : [];
+      return xmlResponse(pageSitemapXml(source === "cslb", pages.map(tradeCityPath)));
     }
     const client = createServerSupabaseClient();
     if (!client) return new Response("Not found", { status: 404 });

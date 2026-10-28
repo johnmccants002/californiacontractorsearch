@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { BrandMark } from "./brand";
 import { SearchForm } from "./search/search-form";
 import { SearchControls } from "./search/search-controls";
@@ -10,6 +10,8 @@ import { StatusBadge } from "./license/status-badge";
 import { demoContractors } from "@/lib/contractors/demo-data";
 import { normalizeFilters } from "@/lib/search/filters";
 import SearchLoading from "@/app/search/loading";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 describe("architectural UI contracts", () => {
   it("keeps primary-action and muted-text contrast above AA for normal text", () => {

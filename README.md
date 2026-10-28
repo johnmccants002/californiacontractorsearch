@@ -151,13 +151,139 @@ Apply `20261026053344_add_filtered_contractor_search.sql` before deploying this 
 
 Examples: `plumbers in Sacramento`, `C-36 Sacramento`, `demolition in El Cerrito`, `plumbers in 95814`. Optional `CA`/`California` suffixes and city + ZIP are supported. Explicit location searches stay empty when there are no matches; they never silently broaden into statewide fuzzy matches. Trade-first phrases without `in` require a known city, and exact contractor names retain precedence. `1 Demolition` and license `1082303` still use name/license search.
 
-Location means **registered business location**, not service area or proximity. Radius/“near me” search, city misspelling correction, location-first phrases, and additional trade aliases are not part of this release. Alias coverage is driven by `classifications.aliases`; imported codes without aliases still work as classification-code searches.
+Location means **registered business location**, not service area. The baseline database search has no proximity search; opt-in Census/Typesense radius support is documented below. Automatic “near me” geolocation, city misspelling correction, location-first phrases, and additional trade aliases are not included. Alias coverage is driven by `classifications.aliases`; imported codes without aliases still work as classification-code searches.
 
 ### Search verification
 
 `npm test` is offline and checks parsing, routing, strict filters, name protection, ranking, and pagination. `npm run test:integration` is opt-in: it loads `.env.local` (or environment variables) and runs read-only queries against the real imported CSLB database with `NEXT_PUBLIC_SUPABASE_ANON_KEY`, never the service-role key. It fails if those public credentials are missing. Use a database with the official statewide import, not the fictional seed records.
 
 The integration suite exercises the exact helper used in production, checks returned license classifications/cities/ZIPs/statuses, verifies `1 Demolition`/`1082303`, and tests explicit overrides, name sorting, deterministic pagination, empty searches, and non-active license discovery. It avoids hard-coding statewide counts so data refreshes do not require rewriting assertions.
+
+## Optional Typesense search
+
+Supabase remains the authoritative public-record store. Typesense 30.x holds a rebuildable search projection; profiles, classification pages, curated SEO directories, and sitemaps keep their database-backed rendering. `/search` and autocomplete responses remain non-indexable. The integration is **off by default** and does not deploy itself.
+
+### Configuration and permissions
+
+Use the server-only variables in `.env.example`: `TYPESENSE_ENABLED`, `TYPESENSE_HOST`, `TYPESENSE_PORT`, `TYPESENSE_PROTOCOL`, `TYPESENSE_COLLECTION`, and `TYPESENSE_SEARCH_API_KEY`. The host is a hostname without `https://` or a path. Remote connections require HTTPS. `TYPESENSE_COLLECTION` should be the stable `contractors` alias in production.
+
+The Next.js application uses a collection-scoped key granting only `documents:search`. It never falls back to an admin key. Use `TYPESENSE_ADMIN_API_KEY` only in the indexing job, not in the Vercel web application's environment. No Typesense key should have a `NEXT_PUBLIC_` prefix. Keep the downloaded key export outside Git; do not paste keys into logs, command-line arguments, screenshots, or issue/PR descriptions.
+
+The indexer deliberately reads Supabase with `NEXT_PUBLIC_SUPABASE_ANON_KEY`, never the service-role key. Only imported CSLB records are copied. Its explicit projection includes license identity, business/personnel names, classification terms/descriptions, registered city/county/state/ZIP, status, issue date, and source timestamp. It does not copy policy numbers, phone numbers, street addresses, bonds, or arbitrary future database columns into Typesense. The opt-in Census enrichment below adds accepted registered-address coordinates; it never infers service areas.
+
+### Build, validate, then publish an index
+
+Use a trusted long-running local/CI worker with access to the cluster and public Supabase API. Do not run the full import inside a Vercel request. Pause CSLB imports and ad-hoc record edits during a full build; this is an application-level consistency check, not a transactional database snapshot.
+
+```sh
+# Creates a versioned collection; does NOT change the search alias.
+npm run search:index
+
+# Resume the exact version printed by the first run.
+npm run search:index -- --resume contractors_vTIMESTAMP
+
+# Compare the completed version with the existing database search.
+npm run search:benchmark -- --collection contractors_vTIMESTAMP
+
+# Explicit publication, only after validation and benchmark review.
+npm run search:index -- --resume contractors_vTIMESTAMP --publish
+```
+
+For local commands, a Typesense Cloud key export can instead be loaded into process memory with `--credentials-file /absolute/path/to/export.txt`. This does not save keys into the project or print their values. Environment variables are preferred for CI. The official Typesense client is pinned in the lockfile; Typesense 30 introduced synonym sets, so this indexer intentionally rejects incompatible server major versions.
+
+Full builds read by primary-key cursor in bounded batches. The source checks avoid unindexed full-table timestamp sorts. Every bulk-import acknowledgement is validated, including failures returned inside an HTTP 200 response. Checkpoints advance only after a whole batch succeeds; replay uses stable database IDs and upserts. Checkpoints live in ignored `.data/typesense/` files and contain no credentials. A local lock prevents overlapping jobs from the same checkout; use a single CI writer as well. After an interrupted process, inspect the recorded PID before removing a stale lock.
+
+Before a readiness marker is written, source/count checks must agree and the Typesense contractor count must equal the imported source count. The search adapter refuses an index without the matching readiness marker. Only `--publish` switches the alias. Retain the previous physical collection for rollback; the script never automatically deletes whole collections. Full rebuilds reconcile removed records by constructing the new collection only from current public records. Allow cluster memory for both old and new collections and check capacity before large rebuilds.
+
+If Typesense rejects writes with `OUT_OF_MEMORY` (HTTP 422), stop and review cluster capacity. Do not raise memory-pressure thresholds or publish a partial index. Once capacity is available, resume the same version; a partly acknowledged batch is safely replayed. The checkpoint can be behind the cluster's actual document count after a failed or diagnostic batch, which is expected for idempotent upserts. Cluster plan changes and old-collection deletion require a separate operator decision.
+
+### Incremental changes and refreshes
+
+```sh
+# Database IDs, NOT license numbers; up to 500 IDs per invocation.
+npm run search:index -- --ids 123,456
+```
+
+This command resolves the current alias, re-reads the complete public projection for each supplied ID, and upserts it. A missing or no-longer-imported ID is removed from that search collection only. The command is idempotent and can be retried after a failed partial batch.
+
+This is an explicit changed-ID synchronization strategy, not automatic change-data capture. Callers must include affected license IDs for personnel/classification edits, join removals, and license deletions. Polling only `licenses.updated_at` would miss related-table changes. After the existing bulk CSLB importer finishes **all** finalization phases, run a full Typesense build, benchmark, and explicit publication; never publish midway through its `reset_details`/repopulation phases. No webhook, scheduled job, or database trigger is installed by this change.
+
+### Search behavior and fallback
+
+License numbers use exact digit matching, never typo correction. Exact normalized business names receive an explicit ranking boost and retain precedence over trade/location interpretation. The existing deterministic parser handles classification codes, trade aliases, five-digit ZIPs, and trade/city phrases. Structured city, county, ZIP, classification and status constraints remain exact. Name/personnel search supports prefixes and controlled typo tolerance; query-token dropping is disabled to avoid unrelated fallback matches. Other text ranking is weighted relevance, not a guaranteed six-tier sort—evaluate the benchmark cases before tuning weights.
+
+Typesense returns ranked IDs, then Supabase supplies the visible contractor records in that order. Highlights use only matched tokens and React-escaped text, never raw response HTML. Autocomplete is debounced, cancels stale requests, returns at most five minimal records, supports keyboard selection, and disappears quietly if unavailable. Native GET forms still work without JavaScript. Add Vercel Firewall/rate-limit protection for `/api/search/suggestions` before public rollout; browser debouncing is not an abuse-control mechanism.
+
+`TYPESENSE_ENABLED=false` immediately selects the existing database backend (redeploy/restart when changing environment variables). With the flag on, configuration failures, timeouts, missing readiness markers, cutoff results, or missing hydrated records fall back to database search. Valid zero-result searches do not trigger broader fallback. The current database RPC has **no county filter**: a county-constrained search fails with an explicit retry/remove-filter message during an outage or while disabled, rather than silently dropping the constraint. Other existing filters retain the database fallback. A future county-aware database migration can remove this limitation; none is applied here.
+
+### Verification and deployment
+
+`npm test` covers query construction, exact-match protection, strict filters, failover, schema projection, import acknowledgements/count checks, safe highlighting, and the suggestion endpoint. `npm run test:integration` continues to verify the existing public Supabase search and SEO paths. `npm run search:benchmark -- --collection VERSION` runs live exact/prefix/typo/personnel/classification/location/status/empty-result cases, checks deterministic pagination and source counts, and writes `.data/typesense/benchmark.json`. It measures both implementations including profile hydration, alternates execution order, excludes warm-up, and reports p50/p95. These are local sequential measurements, not a production load test or a promise of speed/accuracy gains.
+
+The October 27, 2026 local run validated all 243,757 imported licenses in `contractors_v1793162598266` (schema v1, not published). All 13 relevance cases and pagination checks passed. Across 36 comparable timed samples per backend, Typesense measured 225 ms p50 / 358 ms p95 versus database search at 401 ms p50 / 2,163 ms p95. Both ranked the reference contractor first for the tested license, name, prefix, typo and personnel cases; this small suite does not establish statewide relevance or production-load performance. The report is in the ignored `.data/typesense/benchmark.json`. Geographic coverage is not measured by this v1 benchmark.
+
+For Vercel: validate the full index, review the benchmark, explicitly publish the alias, provision a collection-scoped search-only key (covering the alias and its managed versioned collections), then configure only the search variables in the intended deployment environment. Deploy initially with the flag off, check normal search, enable it in a preview, verify autocomplete/filtering and an outage, then explicitly enable production. The full-index admin key stays in the indexing worker. Search integration does not require purchasing the custom domain; the separate SEO/domain rollout remains a distinct deployment decision.
+
+## Census registered-address geocoding (opt-in)
+
+The Census service is used server-side at `https://geocoding.geo.census.gov/geocoder` with benchmark `Public_AR_Current`; no Census API key is needed. This is **enrichment**, not a replacement for CSLB. CSLB's imported address is a registered **mailing address**. Census coordinates are interpolated along address ranges, not verified rooftops, operational premises, or confirmed contractor service areas. See the [Census API](https://geocoding.geo.census.gov/geocoder/Geocoding_Services_API.html), [match-quality guide](https://www2.census.gov/geo/pdfs/maps-data/data/Census_Geocoder_User_Guide.pdf), and [Typesense geo-search documentation](https://typesense.org/docs/30.2/api/geosearch.html).
+
+### Data and acceptance policy
+
+Review `supabase/migrations/20261028045933_census_geocoding_enrichment.sql` and apply it through the project's normal reviewed migration process before running writes. It adds latitude/longitude, matched address, source, status, quality, benchmark, timestamp, and a versioned original-address SHA-256 hash to `licenses`. It does not replace the CSLB street/city/county/ZIP fields, alter public-read RLS, or expose a public write endpoint. The bounded `apply_census_geocodes` RPC is security-invoker and executable only by `service_role`.
+
+The migration invalidates enrichment whenever any original address component changes (including CSLB imports). Each worker update also performs an atomic compare-and-set against its original address snapshot. Changed or deleted licenses are marked stale, not overwritten. Re-running the normal job finds changed hashes. Application/index mapping independently rechecks the hash, so stale coordinates cannot be trusted just because they remain in an index.
+
+Batch `Match` + `Exact` results with valid coordinates are accepted automatically. `Non_Exact` matches are retained for review without searchable coordinates; `Tie` is ambiguous; `No_Match` is unmatched. Missing/invalid coordinate responses are rejected. PO boxes/private mailboxes, missing streets, non-structure addresses and unsupported regions are recorded as skipped without submitting them. No city/ZIP centroid or guessed point is substituted. The single-address JSON service is supported, but it does not report Exact/Non_Exact quality: its sole candidate is review-only, not silently treated as an Exact batch result.
+
+### Initial import and recovery
+
+Run on Node **22.13+** (tested on Node 24) in a trusted, long-lived worker. The worker uses Node's built-in SQLite API, which currently prints an experimental-feature notice. `CENSUS_STATE_DIR` defaults to the Git-ignored `.data/census/`. Keep this private directory on a durable local/CI volume; it contains address snapshots, the cross-job cache, batches, response CSVs and per-license progress. Protect/back up the whole directory, including SQLite WAL files, and do not upload it to Git or public logs. Only one worker should use it; the PID lock prevents same-directory overlap. Inspect the process before removing a stale lock.
+
+```sh
+# Before migration: public read only. No Census submissions or DB changes.
+npm run geo:import -- --dry-run --limit 100
+
+# AFTER migration approval: a small pilot (requires SUPABASE_SERVICE_ROLE_KEY).
+npm run geo:import -- --run --limit 100
+
+# Full initial job. Default 1,000 distinct addresses/request; maximum is 10,000.
+npm run geo:import -- --run --batch-size 1000
+
+# Interrupted network/request/database write: use the saved job UUID.
+npm run geo:import -- --run --resume JOB_UUID
+
+# After a completed CSLB import: skip unchanged processed addresses automatically.
+npm run geo:import -- --run
+
+# Explicitly reprocess unchanged/unmatched addresses against today's Current data.
+npm run geo:import -- --run --refresh
+```
+
+Running `--run` submits public registered street/city/state/ZIP values to the U.S. Census Bureau; these may include home-based businesses. License/personnel names, keys, phone and insurance details are not sent. Census receives a hash ID; the durable item mapping retains each stable database license ID. Normalization is deliberately conservative (casing/spacing/punctuation); unit information is retained. The worker scans source IDs with a high-water cursor and deduplicates across the whole job, not just within each source page. Cache reuse is keyed by address, benchmark and acceptance-policy version. `--refresh` bypasses older cache entries because `Current` changes over time.
+
+Census calls have timeouts and bounded retries for network errors, 408/429 and 5xx responses. Unexpected, duplicate or missing response IDs stop the batch; no partial CSV is accepted. Saved batches are replayable and writes are idempotent. A transient database failure stops cleanly for `--resume`. Addresses changed during a job are counted as stale; run a new normal job after source edits finish. Batches are not a transactional source snapshot, so do not overlap with the bulk CSLB importer. Never run the full pipeline inside a Vercel request, server action, or short-lived function.
+
+### Typesense synchronization and location search
+
+Keep `CENSUS_GEOCODING_ENABLED=false` until the migration, pilot and full geocoding import are validated. Existing ordinary searches work without this migration. With this flag true, the indexer reads accepted enrichment and builds **schema v2** with an optional `[latitude, longitude]` `location` geopoint and `has_location` facet. It never copies the source street address into Typesense. Existing schema-v1 collections remain valid for non-geographic search; radius/distance requests require a validated v2 index.
+
+```sh
+# Build a NEW geo-enabled version; do not resume an incompatible v1 checkpoint.
+CENSUS_GEOCODING_ENABLED=true npm run search:index
+# Benchmark/review, then explicitly publish the printed version when approved.
+CENSUS_GEOCODING_ENABLED=true npm run search:index -- --resume contractors_vTIMESTAMP --publish
+
+# Later jobs emit a JSON list of successfully updated DB IDs.
+# Requires an already-published, ready v2 alias; processed in 500-ID chunks.
+CENSUS_GEOCODING_ENABLED=true npm run search:index -- --ids-file .data/census/JOB_UUID-typesense-ids.json
+```
+
+Sync re-reads current source records, explicitly clears obsolete points, and removes deleted/unconfirmed IDs. After a bulk CSLB import, prefer a full rebuild: the geocoding job's changed-ID file does not include deletions performed by that importer. No automatic scheduled job, Typesense alias switch, plan change, or deployment is installed here. Reserve memory for current and replacement collections during rebuilds; never publish an incomplete index. Do not run geocoding writes during Typesense full-index validation.
+
+Enable **both** `TYPESENSE_ENABLED=true` and `CENSUS_GEOCODING_ENABLED=true` in a preview only after a complete v2 index is ready. The existing design gains center-latitude/longitude and optional radius inputs (0.1–250 miles), plus nearest-registered-address sorting. Example: `/search?classification=c36&lat=38.58&lng=-121.49&radius=25&sort=distance`. City/county/ZIP remain exact CSLB registered-address filters and can be combined with radius. Radius uses straight-line distance, not driving distance. Unlocated records are excluded, and every visible location is rechecked against current Supabase data. The database backend cannot do radius/distance search: it returns an explicit unavailable/remove-filter message during an index outage rather than silently dropping geographic constraints.
+
+Contractor profiles, curated SEO pages, metadata, canonicals and sitemaps retain their database-backed behavior. Arbitrary search query combinations remain non-indexable. Tests include CSV parsing/coordinate order, PO boxes, retries, deduplication, resumed jobs, changed addresses, geographic query constraints, and actual SQL execution/permissions in an isolated PGlite Postgres engine. This does not replace a reviewed staging/production migration and real-data coverage assessment.
 
 ## Database model
 
@@ -180,13 +306,21 @@ The homepage checks the connected dataset before describing its source. Imported
 
 Offline demo records and recognizable SQL seed records are labeled fictional, excluded from indexing, and never receive business JSON-LD. Rows without the importer's `source_status` provenance are marked unconfirmed and excluded from indexing. Imported records that reuse a demo license number are not excluded just because of that number. Database failures throw instead of substituting fictional profiles; license pages offer a retry and the official lookup. Search results are `noindex, follow` so filtered result URLs do not compete with canonical profiles.
 
+### Curated trade and city directories
+
+Five deliberately selected directories live at `/contractors/{trade}/{city}`: plumbing in Sacramento, electrical in Los Angeles, roofing in San Diego, general building in San Jose, and landscaping in Fresno. The allowlist and trade-specific comparison guidance are in `lib/seo/directory-pages.ts`; unsupported combinations return a 404, not automatically generated city pages.
+
+Each page awaits a bounded public-data search on the server before rendering its body, without a loading/Suspense shell around its records. It shows up to 20 imported CSLB records with matching classifications and registered California city addresses, links to license profiles and the full filtered search, and explicitly distinguishes registered address from service area. Counts describe only the displayed selection, not the total number of contractors in the city. Demo, unconfirmed, and empty selections return a 404; database errors propagate instead of becoming successful empty pages. Metadata and page rendering share a request-scoped read. Collection and breadcrumb JSON-LD describe only visible content.
+
+Only clean directory URLs are eligible for indexing. Any query parameters on classification or trade/city pages—including empty, repeated, tracking, and unknown parameters—produce `noindex, follow` with the clean page as canonical. `/search` remains `noindex, follow`. These paths stay crawlable so crawlers can read that instruction. Homepage and classification links expose the selected directories; the sitemap additionally checks each directory has matching imported records before listing it.
+
 ### Live sitemap
 
-`/sitemap.xml` is a sitemap index, still advertised in `robots.txt`. It references `/sitemaps/pages.xml` (the homepage and supported classification pages) and `/sitemaps/licenses-N.xml` files containing imported contractor profiles. License files use stable, half-open 10,000-ID windows and ordered keyset pagination in at most 1,000-row requests. This avoids the API row cap and deep offsets, keeps every file below 50,000 URLs, and allows sparse ID windows without shifting other files. Only the small sitemap fields are selected; profile joins are not loaded. No database migration or elevated database permissions are needed.
+`/sitemap.xml` is a sitemap index, still advertised in `robots.txt`. It references `/sitemaps/pages.xml` (the homepage, supported classification pages, and populated curated trade/city directories) and `/sitemaps/licenses-N.xml` files containing imported contractor profiles. License files use stable, half-open 10,000-ID windows and ordered keyset pagination in at most 1,000-row requests. This avoids the API row cap and deep offsets, keeps every file below 50,000 URLs, and allows sparse ID windows without shifting other files. License sitemaps select only small sitemap fields; checking curated page availability reuses the bounded directory search. No database migration or elevated database permissions are needed.
 
 Successful XML responses are eligible for one hour of shared-cache reuse. API failures return an uncached `503` with `Retry-After`, never a successful demo/partial sitemap. Demo mode publishes no contractor URLs; unknown or empty datasets do not advertise directory pages. License `lastmod` uses a valid source-record timestamp; no dates are fabricated for static pages. Tests cover short API pages, adjacent windows, source exclusions, failure responses, and read-only public-key access.
 
-After deployment, submit `https://californiacontractorsearch.com/sitemap.xml` to Google Search Console. Submission and indexing are separate external steps; a sitemap does not guarantee indexing.
+Before deployment, confirm the primary HTTPS hostname resolves and is connected to the deployment, and set `siteConfig.url` to that origin. Canonicals, structured data, robots, and sitemap URLs must all use that same reachable origin. After deployment, verify that property in Google Search Console, inspect a curated page's live rendered content and indexing eligibility, and submit `{primary-origin}/sitemap.xml`. Submission and indexing are separate external steps; a sitemap does not guarantee indexing.
 
 ## CSLB data refresh design
 

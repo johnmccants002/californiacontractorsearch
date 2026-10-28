@@ -8,6 +8,7 @@ import type { FilterInput, SearchState } from "@/lib/search/filters";
 import type { SearchClassification } from "@/lib/search/trade-location";
 import { recordSource, type DatasetSource } from "./provenance";
 import { getClassificationLicenseIds, type ClassificationFilters } from "./classification-query";
+import { acceptedLocation, type AddressInput, type GeoColumns } from "@/lib/geocoding/address";
 
 const CONTRACTOR_SELECT = `
   *,
@@ -49,6 +50,8 @@ function mapContractor(row: DbRow): Contractor {
     addressLine1: row.address_line_1 ? String(row.address_line_1) : "",
     addressLine2: row.address_line_2 ? String(row.address_line_2) : undefined,
     city: row.city ? String(row.city) : "",
+    county: row.county ? String(row.county) : undefined,
+    registeredLocation: acceptedLocation(row as unknown as AddressInput & GeoColumns),
     state: String(row.state ?? "CA"),
     zip: row.zip ? String(row.zip) : "",
     phone: String(row.phone ?? ""),
@@ -101,6 +104,14 @@ async function hydrateContractors(
 
   const byId = new Map((data as DbRow[]).map((row) => [Number(row.id), mapContractor(row)]));
   return licenseIds.map((id) => byId.get(id)).filter((item): item is Contractor => Boolean(item));
+}
+
+/** Hydrate only the bounded, ranked IDs returned by a search index. */
+export async function getContractorsByIds(ids: number[]) {
+  const client = createServerSupabaseClient();
+  if (!client) throw new Error("Contractor database is not configured.");
+  if (ids.length > 50) throw new Error("Too many contractor IDs.");
+  return hydrateContractors(client, ids);
 }
 
 export async function searchContractorsFromDatabase(

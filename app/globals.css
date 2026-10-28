@@ -140,6 +140,30 @@ svg { flex-shrink: 0; }
 .filter-label { display: block; min-width: 0; font-family: var(--font-technical), monospace; font-size: .62rem; line-height: 1.5; }
 .field-input { display: block; width: 100%; min-width: 0; height: 2.875rem; margin-top: .6rem; border: 1px solid #85877c; background: var(--sheet); padding-inline: .7rem; border-radius: 2px; color: var(--iron); font-family: var(--font-interface), sans-serif; font-size: .8rem; font-weight: 400; }
 .field-input::placeholder { color: var(--muted); opacity: 1; }
+.city-directory { margin-top: 2rem; }
+.city-directory-links { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: .8rem; }
+.city-directory-links a { text-align: left; }
+.directory-guide { margin-top: 1.5rem; padding: 1.5rem; border: 1px solid var(--rule); background: var(--sheet); }
+.directory-guide h2 { font-size: 2rem; margin-bottom: .8rem; }
+.directory-guide p, .directory-actions p { max-width: 55rem; font-size: .8rem; line-height: 1.8; color: var(--muted); }
+.directory-guide p + p { margin-top: .75rem; }
+.directory-actions { margin-top: 1.5rem; }
+.directory-actions p { margin-top: .8rem; }
+.search-input-wrap { position: relative; }
+.search-suggestions { position: absolute; z-index: 20; top: 100%; left: 0; right: 0; margin: 0; padding: 0; list-style: none; border: 1px solid var(--iron); background: var(--sheet); box-shadow: 0 .5rem 1rem #0002; }
+.search-suggestions li { padding: .8rem 1rem; cursor: pointer; border-bottom: 1px solid var(--rule); }
+.search-suggestions li:hover, .search-suggestions li[aria-selected="true"] { background: var(--paper); outline: 1px solid var(--iron); }
+.search-suggestions span, .search-suggestions small { display: block; }
+.search-suggestions span { font-size: .9rem; font-weight: 600; }
+.search-suggestions small { margin-top: .3rem; color: var(--muted); }
+.record-title-row mark { color: inherit; background: #c56b3533; }
+.geo-controls { margin-top: 1rem; padding: 1rem; border: 1px solid var(--rule); }
+.geo-controls summary { cursor: pointer; font-size: .85rem; }
+.geo-filter-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 1rem; margin-top: 1rem; }
+@media (max-width: 640px) { .geo-filter-fields { grid-template-columns: 1fr; } }
+@media (min-width: 1280px) { .search-controls--typesense .search-filter-fields { grid-template-columns: 1.5fr 1fr .7fr 1fr 1fr 1fr auto; } }
+.trade-city-header.classification-header { grid-template-columns: max-content minmax(0, 1fr); }
+.trade-city-header .classification-code { white-space: nowrap; padding-right: 1rem; }
 select.field-input {
   appearance: none;
   padding-right: 2.5rem;

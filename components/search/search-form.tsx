@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Arrow, SearchIcon } from "@/components/brand";
+import { AutocompleteInput } from "./autocomplete-input";
+import { typesenseEnabled } from "@/lib/typesense/config";
 
 const examples = ["1 Demolition", "1082303", "Plumbers in Sacramento", "C-36 Sacramento"];
 
@@ -15,8 +17,7 @@ export function SearchForm({ defaultValue = "", compact = false, showExamples = 
     <form action="/search" role="search">
       <label htmlFor={id} className="search-label">Search California contractor licenses</label>
       <div className={`search-bar${compact ? " search-bar-compact" : ""}`}>
-        <span className="search-input-wrap"><SearchIcon /><input id={id} type="search" name="q" defaultValue={defaultValue} maxLength={200}
-          placeholder="Name, license #, trade, or city" autoComplete="off" /></span>
+        <div className="search-input-wrap"><SearchIcon /><AutocompleteInput id={id} defaultValue={defaultValue} enabled={typesenseEnabled()} /></div>
         <button type="submit" className="button-primary">Search <Arrow /></button>
       </div>
     </form>

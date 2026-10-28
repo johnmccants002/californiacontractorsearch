@@ -26,9 +26,12 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   let error: string | undefined;
   let state: SearchState = { query, filters: { ...normalizeFilters(), ...filters,
     status: LICENSE_STATUSES.includes(filters.status as LicenseStatus) ? filters.status as LicenseStatus : "",
-    sort: filters.sort === "name" ? "name" : "relevance",
+    sort: filters.sort === "name" || filters.sort === "distance" ? filters.sort : "relevance",
   } };
   try {
+    // Keep removable chips for valid filters even when the backend is unavailable.
+    // Invalid raw values remain visible in the form so users can correct them.
+    state.filters = normalizeFilters(filters);
     data = await searchContractors(query, page, 10, filters, catalog);
     state = data.state;
   } catch (cause) {
@@ -41,7 +44,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
     <header className="search-page-heading"><div><p className="eyebrow"><span>01</span> / THE SEARCH INDEX</p><h1>Find a contractor.</h1></div>
       <p>Search public license records. Refine by trade, registered location, or license status.</p>
     </header>
-    <SearchControls key={`${searchHref(state)}:${error ?? ""}`} state={state} catalog={catalog} error={error} />
+    <SearchControls key={`${searchHref(state)}:${error ?? ""}`} state={state} catalog={catalog} error={error} geoInput={filters} />
 
     {!hasSearch && !error ? <section className="empty-state">
       <p className="eyebrow">YOUR SEARCH STARTS HERE</p><h2>A name. A number. A place.</h2>
@@ -55,7 +58,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
       </div><p>{data.source === "demo" ? "Fictional demonstration records." : "Not a live CSLB status check."}<br />Verify current details with CSLB.</p></header>
 
       {data.results.length ? <>
-        <div className="results-list">{data.results.map((result) => <ResultCard key={result.contractor.id} contractor={result.contractor} matchedBy={result.matchedBy} />)}</div>
+        <div className="results-list">{data.results.map((result) => <ResultCard key={result.contractor.id} contractor={result.contractor} matchedBy={result.matchedBy} highlightTokens={result.highlightTokens} distanceMiles={result.distanceMiles} />)}</div>
         <Pagination page={data.page} totalPages={data.totalPages} state={state} />
       </> : <section className="empty-state">
         <p className="eyebrow">NO RECORDS TO DISPLAY</p>
