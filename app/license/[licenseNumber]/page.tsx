@@ -6,7 +6,7 @@ import { LicenseVerification } from "@/components/data-source";
 import { getContractorByLicense } from "@/lib/contractors/repository";
 import { displayClassificationCode } from "@/lib/search/normalize";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { featuredClassifications, siteConfig } from "@/config/site";
+import { featuredClassifications, getCslbLicenseUrl } from "@/config/site";
 
 type PageProps = { params: Promise<{ licenseNumber: string }> };
 
@@ -141,7 +141,7 @@ export default async function LicensePage({ params }: PageProps) {
           <ProfileSection number="07" title="Source and verification" wide>
             <p className="max-w-4xl text-[var(--muted)]">{contractor.dataSource === "cslb" ? "This profile uses imported public California Contractors State License Board records. The source record date is shown above; it is not the date of a live verification or a guarantee that every detail is current." : contractor.dataSource === "demo" ? "This is a fictional demonstration profile. Its names, dates, and other details are sample data, not imported CSLB facts." : "The origin of this record has not been confirmed. Verify all license information directly with CSLB."}</p>
             <p className="record-advisory">License status may change. Verify current information directly with CSLB before making important decisions.</p>
-            <a href={siteConfig.cslbLookupUrl} target="_blank" rel="noopener noreferrer" className="button-secondary mt-5">Verify with official CSLB lookup ↗</a>
+            <a href={getCslbLicenseUrl(contractor.dataSource === "cslb" ? contractor.licenseNumber : undefined)} target="_blank" rel="noopener noreferrer" className="button-secondary mt-5">Verify with official CSLB lookup ↗<span className="sr-only"> (opens in a new tab)</span></a>
           </ProfileSection>
 
           <ProfileSection number="08" title="Frequently asked questions" wide>

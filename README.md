@@ -119,6 +119,8 @@ supabase/
 
 Server Components are the default. Search and filters use URL query parameters and server rendering, so the core product does not require browser JavaScript.
 
+Classification landing pages use a bounded public-read query to select at most 100 matching license IDs, then hydrate only those records. Filters are applied before the limit; city and numeric ZIP-prefix filters also use the existing search-vector index to narrow candidates. The returned selection is sorted by ID in the app, without requesting a global ID sort that can trigger slow primary-key scans for large cities. These non-paginated pages do not promise the lowest 100 IDs or calculate a statewide total. Database business-name normalization is preserved, and full record hydration retains every classification on each license. The legacy `classification_license_ids` RPC remains in the database for compatibility but is no longer called by the app: its unused window count can time out on broad trades. A route-level loading state provides immediate navigation feedback. No migration is required for this fix.
+
 ### Complimentary advertising
 
 A compact, clearly labeled Pro-Builders Insurance Agency advertisement appears beneath the site header on every page. Its button opens [insureprobuilders.com](https://insureprobuilders.com/) in a new tab, preserving the current search. The destination is configured by `insuranceAdvertiserUrl` in `config/site.ts`; the banner is in `components/insurance-banner.tsx` and mounted once in the root layout.
@@ -174,7 +176,7 @@ The app includes canonical metadata, Open Graph defaults, dynamic license/classi
 
 ### Source disclosure and verification
 
-The homepage checks the connected dataset before describing its source. Imported profiles display **Source: CSLB public records**, a **Source record updated** date, and a prominent official CSLB lookup link with the license number to enter. The date comes from the export's `LastUpdate` field, not the import run or a live verification. Missing source dates remain explicitly unavailable.
+The homepage checks the connected dataset before describing its source. Imported profiles display **Source: CSLB public records**, a **Source record updated** date, and official verification links that open the matching license directly at `https://www.cslb.ca.gov/{licenseNumber}`. General navigation, demo or unconfirmed profiles, and missing or malformed license numbers retain the general CSLB lookup. The date comes from the export's `LastUpdate` field, not the import run or a live verification. Missing source dates remain explicitly unavailable.
 
 Offline demo records and recognizable SQL seed records are labeled fictional, excluded from indexing, and never receive business JSON-LD. Rows without the importer's `source_status` provenance are marked unconfirmed and excluded from indexing. Imported records that reuse a demo license number are not excluded just because of that number. Database failures throw instead of substituting fictional profiles; license pages offer a retry and the official lookup. Search results are `noindex, follow` so filtered result URLs do not compete with canonical profiles.
 

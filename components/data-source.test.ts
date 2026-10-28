@@ -21,8 +21,9 @@ describe("source disclosure", () => {
     expect(html).toContain("Source record updated:");
     expect(html).toContain('dateTime="2025-12-11T00:00:00.000Z"');
     expect(html).toContain("Dec 11, 2025");
-    expect(html).toContain("https://www.cslb.ca.gov/OnlineServices/CheckLicenseII/CheckLicense.aspx");
-    expect(html).toContain("Use license #1056730");
+    expect(html).toContain('href="https://www.cslb.ca.gov/1056730"');
+    expect(html).toContain("Open license #1056730 directly on CSLB");
+    expect(html).toContain('target="_blank" rel="noopener noreferrer"');
     expect(html).toContain("opens in a new tab");
   });
   it("does not dress demo timestamps up as CSLB freshness", () => {
@@ -30,6 +31,8 @@ describe("source disclosure", () => {
     expect(html).toContain("Fictional demonstration record");
     expect(html).not.toContain("Source: CSLB");
     expect(html).not.toContain("<time");
+    expect(html).toContain('href="https://www.cslb.ca.gov/OnlineServices/CheckLicenseII/CheckLicense.aspx"');
+    expect(html).not.toContain('href="https://www.cslb.ca.gov/1056730"');
   });
   it("labels missing dates honestly", () => {
     const html = renderToStaticMarkup(createElement(LicenseVerification, { contractor: { ...demoContractors[0], dataSource: "cslb", sourceUpdatedAt: "" } }));
