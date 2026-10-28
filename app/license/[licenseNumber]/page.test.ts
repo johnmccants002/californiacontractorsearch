@@ -30,4 +30,25 @@ describe("profile indexing and source presentation", () => {
     vi.mocked(getContractorByLicense).mockResolvedValue(undefined);
     expect((await generateMetadata(props)).robots).toEqual({ index: false, follow: true });
   });
+  it("keeps all dossier sections and source dates in the server-rendered record", async () => {
+    vi.mocked(getContractorByLicense).mockResolvedValue({ ...demoContractors[0], dataSource: "cslb", sourceUpdatedAt: "2026-10-03T00:00:00Z" });
+    const html = renderToStaticMarkup(await LicensePage(props));
+    for (const section of ["License Information", "Classifications", "Business Information", "Personnel", "Bond Information", "Workers’ Compensation", "Source and verification", "Frequently asked questions"]) {
+      expect(html).toContain(section);
+    }
+    expect(html).toContain("<time");
+    expect(html).toContain("Oct 3, 2026");
+    expect(html).toContain("not a live status check");
+  });
+  it("routes non-editorial classifications to the existing filtered search", async () => {
+    const record = demoContractors[0];
+    vi.mocked(getContractorByLicense).mockResolvedValue({
+      ...record,
+      classifications: [...record.classifications, { ...record.classifications[0], id: 999, code: "d06", slug: "d06", name: "Concrete Related Services Contractor" }],
+    });
+    const html = renderToStaticMarkup(await LicensePage(props));
+    expect(html).toContain('href="/search?classification=d06"');
+    expect(html).not.toContain('href="/classification/d06"');
+    expect(html).toContain(`href="/classification/${record.classifications[0].slug}"`);
+  });
 });

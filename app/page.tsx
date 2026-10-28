@@ -4,6 +4,9 @@ import { DatasetNotice } from "@/components/data-source";
 import { getDatasetSource } from "@/lib/contractors/repository";
 import { SearchForm } from "@/components/search/search-form";
 import { Sponsorship } from "@/components/sponsorship";
+import { CaliforniaDrawing } from "@/components/california-drawing";
+import { SectionHeading } from "@/components/section-heading";
+import { Arrow } from "@/components/brand";
 import { featuredClassifications, siteConfig } from "@/config/site";
 
 export const dynamic = "force-dynamic";
@@ -14,60 +17,34 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function HomePage() {
   const source = await getDatasetSource();
-  return (
-    <>
-      <section className="border-b border-slate-200 bg-white">
-        <div className="page-shell py-16 sm:py-24 lg:py-28">
-          <div className="mx-auto max-w-4xl text-center">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-blue-800">Public license record search</p>
-            <h1 className="mt-4 text-4xl font-bold tracking-tight text-slate-950 sm:text-6xl">California Contractor Search</h1>
-            <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-slate-600">
-              Search California contractor licenses by name, license number, trade, or location.
-            </p>
-          </div>
-          <div className="mx-auto mt-10 max-w-4xl rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm sm:p-6">
-            <SearchForm showExamples />
-          </div>
-          <p className="mx-auto mt-5 max-w-3xl text-center text-xs leading-5 text-slate-500">{siteConfig.disclaimer}</p>
-        </div>
+  return <>
+    <section className="home-hero"><div className="page-shell">
+      <div className="hero-grid"><div className="hero-content">
+        <p className="eyebrow"><span className="index-dot" /> CALIFORNIA CONTRACTOR SEARCH <span className="hero-edition">/ PUBLIC RECORDS</span></p>
+        <h1>Find the right<br />contractor.<span>Know who you’re hiring.</span></h1>
+        <p className="hero-description">A clearer view of California contractor licenses.<br className="hidden sm:block" /> Search by name, license number, trade, or location.</p>
+        <SearchForm showExamples />
+      </div><CaliforniaDrawing /></div>
+      <div className="hero-bottom"><span className="technical">01 / SEARCH WITH CLARITY</span><p>Independent search. Public records. No account required.</p></div>
+    </div></section>
+
+    <div className="page-shell home-sections">
+      <section id="trades" aria-labelledby="browse-heading">
+        <SectionHeading number="02" label="THE TRADE INDEX" title="Built for every kind of builder." id="browse-heading"><p>Find a specialty.<br />Start with a classification.</p></SectionHeading>
+        <div className="trade-index">{featuredClassifications.map((classification, index) =>
+          <Link key={classification.slug} href={`/classification/${classification.slug}`}>
+            <span className="trade-code">{classification.code}</span><span className="trade-name">{classification.name}<span className="technical">CLASSIFICATION / {String(index + 1).padStart(2, "0")}</span></span><Arrow />
+          </Link>
+        )}<Link href="/search" className="trade-all"><span className="trade-code">↗</span><span className="trade-name">Find your trade<span className="technical">EXPLORE THE FULL SEARCH</span></span><Arrow /></Link></div>
       </section>
 
-      <div className="page-shell space-y-16 py-16">
-        <section className="grid gap-8 md:grid-cols-[1fr_1.2fr]">
-          <div>
-            <p className="text-sm font-bold uppercase tracking-widest text-blue-800">One search box</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-950">Search California Contractors</h2>
-          </div>
-          <div className="space-y-4 text-base leading-7 text-slate-600">
-            <p>
-              Search license information using a business name, license number, associated individual, classification, city, or ZIP code. You can also combine terms, such as <span className="font-medium text-slate-900">plumbers Sacramento</span>.
-            </p>
-            <DatasetNotice source={source} />
-          </div>
-        </section>
-
-        <section aria-labelledby="browse-heading">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="text-sm font-bold uppercase tracking-widest text-blue-800">California license types</p>
-              <h2 id="browse-heading" className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Browse by classification</h2>
-            </div>
-          </div>
-          <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {featuredClassifications.map((classification) => (
-              <Link key={classification.slug} href={`/classification/${classification.slug}`} className="group flex items-center justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300 hover:shadow-md">
-                <span>
-                  <span className="block font-mono text-sm font-bold text-blue-800">{classification.code}</span>
-                  <span className="mt-1 block font-semibold text-slate-900">{classification.name}</span>
-                </span>
-                <span aria-hidden="true" className="text-slate-400 transition group-hover:translate-x-1 group-hover:text-blue-800">→</span>
-              </Link>
-            ))}
-          </div>
-        </section>
-
-        <Sponsorship />
-      </div>
-    </>
-  );
+      <section className="data-attribution" id="about-data" aria-labelledby="data-heading">
+        <div><p className="eyebrow"><span>03</span> / KNOW THE SOURCE</p><h2 id="data-heading">A clearer view.<br />An informed decision.</h2></div>
+        <div className="data-attribution-copy"><DatasetNotice source={source} /><p>{siteConfig.disclaimer}</p>
+          <a href={siteConfig.cslbLookupUrl} target="_blank" rel="noopener noreferrer" className="text-link">Verify with the official CSLB <Arrow diagonal /><span className="sr-only"> (opens in a new tab)</span></a>
+        </div>
+      </section>
+      <Sponsorship />
+    </div>
+  </>;
 }

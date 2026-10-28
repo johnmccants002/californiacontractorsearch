@@ -1,20 +1,16 @@
 import Link from "next/link";
+import { BrandLogo, Arrow } from "@/components/brand";
+import { MobileNav } from "@/components/mobile-nav";
+import { siteConfig } from "@/config/site";
 
 export function SiteHeader() {
-  return (
-    <header className="border-b border-slate-200 bg-white">
-      <div className="page-shell flex h-16 items-center justify-between gap-4">
-        <Link href="/" className="group flex items-center gap-3 font-semibold tracking-tight text-slate-950">
-          <span className="grid size-9 place-items-center rounded-lg bg-blue-900 text-sm font-bold text-white shadow-sm group-focus-visible:outline group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-blue-700">
-            CA
-          </span>
-          <span className="hidden sm:inline">California Contractor Search</span>
-          <span className="sm:hidden">Contractor Search</span>
-        </Link>
-        <Link href="/search" className="text-sm font-medium text-slate-600 hover:text-blue-900">
-          Search licenses
-        </Link>
-      </div>
-    </header>
-  );
+  return <header className="site-header"><div className="page-shell header-inner">
+    <Link href="/" className="brand-link" aria-label="California Contractor Search home"><BrandLogo /></Link>
+    <nav className="desktop-nav" aria-label="Main navigation">
+      <Link href="/search">Search licenses</Link>
+      <Link href="/#trades">Explore trades</Link>
+      <a href={siteConfig.cslbLookupUrl} target="_blank" rel="noopener noreferrer">Official CSLB <Arrow diagonal /><span className="sr-only"> (opens in a new tab)</span></a>
+    </nav>
+    <MobileNav />
+  </div></header>;
 }
