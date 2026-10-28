@@ -56,6 +56,8 @@ export interface Contractor {
   addressLine1: string;
   addressLine2?: string;
   city: string;
+  county?: string;
+  registeredLocation?: [number, number];
   state: string;
   zip: string;
   phone: string;
@@ -73,9 +75,12 @@ export interface SearchResult {
   contractor: Contractor;
   score: number;
   matchedBy: string[];
+  highlightTokens?: string[];
+  distanceMiles?: number;
 }
 
 export interface PaginatedResults {
+  engine?: "typesense" | "database";
   state: SearchState;
   interpretation?: string;
   results: SearchResult[];

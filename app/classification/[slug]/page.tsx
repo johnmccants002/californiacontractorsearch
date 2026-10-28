@@ -7,28 +7,31 @@ import { findClassification } from "@/lib/contractors/demo-data";
 import { getContractorsForClassification } from "@/lib/search/search-contractors";
 import { displayClassificationCode } from "@/lib/search/normalize";
 import { getDatasetSource } from "@/lib/contractors/repository";
+import { hasDirectoryQuery, type DirectorySearchParams } from "@/lib/seo/directory-pages";
+import { TradeCityLinks } from "@/components/trade-city-links";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ q?: string; city?: string; zip?: string; status?: string }>;
+  searchParams: Promise<DirectorySearchParams>;
 };
 
-export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const classification = findClassification(slug);
-  if (!classification) return { title: "Classification not found" };
+  if (!classification) return { title: "Classification not found", robots: { index: false, follow: true } };
   const code = displayClassificationCode(classification.code);
   return {
-    title: { absolute: `${code} ${classification.name.replace(" Contractor", "")}s in California | Contractor Search` },
+    title: { absolute: `${code} ${classification.name.replace(" Contractor", "")} Contractors in California | Contractor Search` },
     description: `Search ${code} ${classification.name.toLowerCase()} license records across California. Filter by business name, city, ZIP, and license status.`,
     alternates: { canonical: `/classification/${classification.slug}` },
-    robots: { index: await getDatasetSource() === "cslb", follow: true },
+    robots: { index: !hasDirectoryQuery(await searchParams) && await getDatasetSource() === "cslb", follow: true },
   };
 }
 
 export default async function ClassificationPage({ params, searchParams }: PageProps) {
   const { slug } = await params;
-  const filters = await searchParams;
+  const query = await searchParams;
+  const filters = Object.fromEntries(["q", "city", "zip", "status"].flatMap((key) => typeof query[key] === "string" ? [[key, query[key]]] : []));
   const classification = findClassification(slug);
   if (!classification) notFound();
   const { contractors, source } = await getContractorsForClassification(classification.slug, filters);
@@ -54,6 +57,7 @@ export default async function ClassificationPage({ params, searchParams }: PageP
     {contractors.length ? <div className="results-list">{contractors.map((contractor) => <ResultCard key={contractor.id} contractor={contractor} />)}</div> :
       <div className="empty-state"><p className="eyebrow">NO RECORDS TO DISPLAY</p><h2>No contractors match these filters.</h2><p>Try a broader location or remove a filter.</p><Link href={`/classification/${classification.slug}`} className="button-secondary">Clear filters</Link></div>
     }
+    {source === "supabase" ? <TradeCityLinks classification={classification.code} /> : null}
     <div className="mt-12"><Sponsorship classification={code} /></div>
   </div>;
 }

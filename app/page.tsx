@@ -8,6 +8,7 @@ import { CaliforniaDrawing } from "@/components/california-drawing";
 import { SectionHeading } from "@/components/section-heading";
 import { Arrow } from "@/components/brand";
 import { featuredClassifications, siteConfig } from "@/config/site";
+import { TradeCityLinks } from "@/components/trade-city-links";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export default async function HomePage() {
             <span className="trade-code">{classification.code}</span><span className="trade-name">{classification.name}<span className="technical">CLASSIFICATION / {String(index + 1).padStart(2, "0")}</span></span><Arrow />
           </Link>
         )}<Link href="/search" className="trade-all"><span className="trade-code">↗</span><span className="trade-name">Find your trade<span className="technical">EXPLORE THE FULL SEARCH</span></span><Arrow /></Link></div>
+        {source === "cslb" ? <TradeCityLinks /> : null}
       </section>
 
       <section className="data-attribution" id="about-data" aria-labelledby="data-heading">
