@@ -1,17 +1,15 @@
 import { siteConfig } from "@/config/site";
+import { Arrow } from "@/components/brand";
 
 export function Sponsorship({ classification }: { classification?: string }) {
-  return (
-    <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-6 sm:flex sm:items-center sm:justify-between sm:gap-8" aria-label="Sponsored resource">
-      <div>
-        <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Sponsored by Contractors Intelligence School</p>
-        <h2 className="mt-2 text-lg font-semibold text-slate-950">
-          {classification ? `Interested in becoming a ${classification} contractor?` : "Want to become a licensed California contractor?"}
-        </h2>
-      </div>
-      <a href={siteConfig.cisUrl} target="_blank" rel="sponsored noreferrer" className="button-secondary mt-4 inline-flex shrink-0 sm:mt-0">
-        {classification ? `Learn About ${classification} Licensing` : "Explore Contractor License Preparation"}
-      </a>
-    </aside>
-  );
+  return <aside className="school-promotion" aria-label="Sponsored resource">
+    <div><p className="eyebrow">Sponsored by Contractors Intelligence School</p>
+      <h2>{classification ? `Your next chapter: ${classification} licensing.` : "Build what comes next."}</h2>
+      <p>Take the next step toward your California contractor license.</p>
+    </div>
+    <a href={siteConfig.cisUrl} target="_blank" rel="sponsored noopener noreferrer" className="button-secondary">
+      {classification ? `Learn About ${classification} Licensing` : "Explore Contractor License Preparation"} <Arrow diagonal />
+      <span className="sr-only"> (opens in a new tab)</span>
+    </a>
+  </aside>;
 }

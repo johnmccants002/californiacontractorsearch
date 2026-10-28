@@ -19,6 +19,19 @@ The initial application MVP and statewide CSLB import pipeline are complete. The
 - PostgreSQL `pg_trgm` fuzzy search
 - Vitest and ESLint
 
+## Brand and interface
+
+The interface combines architectural editorial typography with a technical public-record index. It is a license directory, not a contractor marketplace. The custom drafting-mark SVG is shared by the header and social image, with a matching SVG favicon.
+
+- Tokens in `app/globals.css`: Blueprint Paper `#F2EFE6`, Iron `#1D292D`, Safety Orange `#D85C32`, Sage `#77867A`, and Concrete `#C7C1B2`. Primary actions use a deeper iron text token (`#10191C`) on orange for 4.67:1 contrast.
+- Self-hosted Barlow Condensed (display), Manrope (interface), and IBM Plex Mono (record metadata), loaded with `next/font/local`. Browser font assets total about 49 KB; a separate server-only TTF renders the Open Graph image. OFL licenses are retained in `app/fonts`.
+- Reusable brand, section-heading, search, record, filter, status, and sponsorship components; shared semantic CSS classes for dossier sections and fallback states.
+- Native GET forms and server-rendered records remain the default. Only the mobile menu and filter disclosure need client interaction; both retain no-JavaScript access. There are no added runtime dependencies, tracking scripts, or external font requests.
+- A skip link, visible keyboard focus, text-based status stamps, 44px primary controls, native mobile menu, and reduced-motion styles support accessible use.
+- Indexed routes, canonical metadata, JSON-LD, sitemap generation, search ranking, pagination parameters, database access, and ad destinations are preserved. Less-common classifications without an editorial landing page link to the existing filtered search.
+
+Redesign verification covered 360px/390px phones, a 768px tablet, 1280px laptop, and 1440px desktop; homepage name/license search, combined filters, removable chips, pagination, classification filters, dossier rendering, and keyboard navigation. Run the commands below for repeatable unit, type, lint, build, and read-only database checks. Field Core Web Vitals and cross-browser/device testing still require a deployed release.
+
 ## Local setup
 
 Requirements: Node.js 22 or newer and npm.

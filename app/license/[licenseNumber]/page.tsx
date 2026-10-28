@@ -6,7 +6,7 @@ import { LicenseVerification } from "@/components/data-source";
 import { getContractorByLicense } from "@/lib/contractors/repository";
 import { displayClassificationCode } from "@/lib/search/normalize";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { siteConfig } from "@/config/site";
+import { featuredClassifications, siteConfig } from "@/config/site";
 
 type PageProps = { params: Promise<{ licenseNumber: string }> };
 
@@ -50,29 +50,29 @@ export default async function LicensePage({ params }: PageProps) {
   };
 
   return (
-    <div className="page-shell py-10 sm:py-14">
+    <div className="page-shell inner-page">
       {contractor.dataSource === "cslb" ? <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} /> : null}
-      <div className="mx-auto max-w-4xl">
-        <nav aria-label="Breadcrumb" className="text-sm text-slate-500">
-          <Link href="/" className="hover:text-blue-900">Home</Link> <span aria-hidden="true">/</span> <span>License #{contractor.licenseNumber}</span>
+      <div>
+        <nav aria-label="Breadcrumb" className="breadcrumb">
+          <Link href="/">Home</Link> <span aria-hidden="true">/</span> <span>License #{contractor.licenseNumber}</span>
         </nav>
 
-        <header className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-9">
-          <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
+        <header className="profile-header">
+          <div className="profile-title-row">
             <div>
-              <p className="font-mono text-sm font-semibold text-blue-800">California Contractor License #{contractor.licenseNumber}</p>
-              <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">{contractor.businessName}</h1>
+              <p className="eyebrow">California Contractor License #{contractor.licenseNumber}</p>
+              <h1>{contractor.businessName}</h1>
             </div>
             <StatusBadge status={contractor.licenseStatus} />
           </div>
           <LicenseVerification contractor={contractor} />
-          <p className="mt-6 max-w-3xl border-t border-slate-200 pt-6 leading-7 text-slate-700">
+          <p className="profile-summary">
             {contractor.dataSource === "cslb" ? `${contractor.businessName} is listed in the imported CSLB records with a business address in ${contractor.city}, ${contractor.state}. License #${contractor.licenseNumber} is recorded as ${contractor.licenseStatus} in this dataset.` : `This ${contractor.dataSource === "demo" ? "demonstration" : "unconfirmed"} profile shows ${contractor.businessName} and license number ${contractor.licenseNumber}. It is not verification of a real contractor's license.`}
           </p>
         </header>
 
-        <div className="mt-8 space-y-6">
-          <ProfileSection title="License Information">
+        <div className="profile-grid">
+          <ProfileSection number="01" title="License Information">
             <dl className="fact-list">
               <Fact label="License number" value={contractor.licenseNumber} />
               <Fact label="Status" value={contractor.licenseStatus} />
@@ -82,19 +82,19 @@ export default async function LicensePage({ params }: PageProps) {
             </dl>
           </ProfileSection>
 
-          <ProfileSection title="Classifications">
+          <ProfileSection number="02" title="Classifications">
             <div className="space-y-3">
               {contractor.classifications.map((classification) => (
-                <Link key={classification.id} href={`/classification/${classification.slug}`} className="block rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:bg-blue-50/40">
-                  <span className="font-mono font-bold text-blue-800">{displayClassificationCode(classification.code)}</span>
-                  <span className="ml-3 font-semibold text-slate-950">{classification.name}</span>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{classification.description}</p>
+                <Link key={classification.id} href={featuredClassifications.some((item) => item.slug === classification.slug) ? `/classification/${classification.slug}` : `/search?classification=${encodeURIComponent(classification.code)}`} className="profile-classification">
+                  <span>{displayClassificationCode(classification.code)}</span>
+                  <span>{classification.name}</span>
+                  <p>{classification.description}</p>
                 </Link>
               ))}
             </div>
           </ProfileSection>
 
-          <ProfileSection title="Business Information">
+          <ProfileSection number="03" title="Business Information">
             <dl className="fact-list">
               <Fact label="Address" value={[contractor.addressLine1, contractor.addressLine2].filter(Boolean).join(", ")} />
               <Fact label="City, state, ZIP" value={`${contractor.city}, ${contractor.state} ${contractor.zip}`} />
@@ -102,17 +102,17 @@ export default async function LicensePage({ params }: PageProps) {
             </dl>
           </ProfileSection>
 
-          <ProfileSection title="Personnel">
+          <ProfileSection number="04" title="Personnel">
             {contractor.personnel.length ? contractor.personnel.map((person) => (
-              <div key={person.id} className="border-b border-slate-200 py-4 last:border-0">
-                <p className="font-semibold text-slate-950">{person.fullName}</p>
-                <p className="mt-1 text-sm text-slate-600">{person.role}{person.associationDate ? ` · Associated ${formatDate(person.associationDate)}` : ""}</p>
+              <div key={person.id} className="personnel-record">
+                <p>{person.fullName}</p>
+                <p>{person.role}{person.associationDate ? ` · Associated ${formatDate(person.associationDate)}` : ""}</p>
               </div>
-            )) : <p className="text-slate-600">No personnel records are available.</p>}
+            )) : <p className="text-[var(--muted)]">No personnel records are available.</p>}
           </ProfileSection>
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            <ProfileSection title="Bond Information">
+          <>
+            <ProfileSection number="05" title="Bond Information">
               {contractor.bonds.length ? contractor.bonds.map((bond) => (
                 <dl className="fact-list" key={bond.id}>
                   <Fact label="Type" value={bond.bondType} />
@@ -121,12 +121,12 @@ export default async function LicensePage({ params }: PageProps) {
                   <Fact label="Amount" value={formatCurrency(bond.bondAmount)} />
                   <Fact label="Effective" value={formatDate(bond.effectiveDate)} />
                 </dl>
-              )) : <p className="text-slate-600">No bond record is available in this dataset.</p>}
+              )) : <p className="text-[var(--muted)]">No bond record is available in this dataset.</p>}
             </ProfileSection>
 
-            <ProfileSection title="Workers’ Compensation">
+            <ProfileSection number="06" title="Workers’ Compensation">
               {contractor.workersComp.length ? contractor.workersComp.map((item) => item.exemption ? (
-                <p key={item.id} className="text-slate-700">This record indicates a workers&apos; compensation exemption.</p>
+                <p key={item.id} className="text-[var(--muted)]">This record indicates a workers&apos; compensation exemption.</p>
               ) : (
                 <dl className="fact-list" key={item.id}>
                   <Fact label="Carrier" value={item.carrier ?? "Not available"} />
@@ -134,20 +134,20 @@ export default async function LicensePage({ params }: PageProps) {
                   <Fact label="Effective" value={formatDate(item.effectiveDate)} />
                   <Fact label="Expiration" value={formatDate(item.expirationDate)} />
                 </dl>
-              )) : <p className="text-slate-600">No workers&apos; compensation record is available.</p>}
+              )) : <p className="text-[var(--muted)]">No workers&apos; compensation record is available.</p>}
             </ProfileSection>
-          </div>
+          </>
 
-          <ProfileSection title="Source and verification">
-            <p className="leading-7 text-slate-700">{contractor.dataSource === "cslb" ? "This profile uses imported public California Contractors State License Board records. The source record date is shown above; it is not the date of a live verification or a guarantee that every detail is current." : contractor.dataSource === "demo" ? "This is a fictional demonstration profile. Its names, dates, and other details are sample data, not imported CSLB facts." : "The origin of this record has not been confirmed. Verify all license information directly with CSLB."}</p>
-            <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm leading-6 text-amber-950">License status may change. Verify current information directly with CSLB before making important decisions.</p>
-            <a href={siteConfig.cslbLookupUrl} target="_blank" rel="noreferrer" className="button-secondary mt-5">Verify with official CSLB lookup ↗</a>
+          <ProfileSection number="07" title="Source and verification" wide>
+            <p className="max-w-4xl text-[var(--muted)]">{contractor.dataSource === "cslb" ? "This profile uses imported public California Contractors State License Board records. The source record date is shown above; it is not the date of a live verification or a guarantee that every detail is current." : contractor.dataSource === "demo" ? "This is a fictional demonstration profile. Its names, dates, and other details are sample data, not imported CSLB facts." : "The origin of this record has not been confirmed. Verify all license information directly with CSLB."}</p>
+            <p className="record-advisory">License status may change. Verify current information directly with CSLB before making important decisions.</p>
+            <a href={siteConfig.cslbLookupUrl} target="_blank" rel="noopener noreferrer" className="button-secondary mt-5">Verify with official CSLB lookup ↗</a>
           </ProfileSection>
 
-          <ProfileSection title="Frequently asked questions">
-            <div className="space-y-6">
-              <div><h3 className="font-semibold text-slate-950">What is {contractor.businessName}&apos;s license number?</h3><p className="mt-2 text-slate-600">The license number shown in this dataset is {contractor.licenseNumber}.</p></div>
-              <div><h3 className="font-semibold text-slate-950">Is this an official CSLB website?</h3><p className="mt-2 text-slate-600">No. California Contractor Search is independent and is not affiliated with CSLB.</p></div>
+          <ProfileSection number="08" title="Frequently asked questions" wide>
+            <div className="faq-grid">
+              <div><h3>What is {contractor.businessName}&apos;s license number?</h3><p>The license number shown in this dataset is {contractor.licenseNumber}.</p></div>
+              <div><h3>Is this an official CSLB website?</h3><p>No. California Contractor Search is independent and is not affiliated with CSLB.</p></div>
             </div>
           </ProfileSection>
         </div>
@@ -156,8 +156,8 @@ export default async function LicensePage({ params }: PageProps) {
   );
 }
 
-function ProfileSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"><h2 className="text-xl font-bold tracking-tight text-slate-950">{title}</h2><div className="mt-5">{children}</div></section>;
+function ProfileSection({ number, title, children, wide = false }: { number: string; title: string; children: React.ReactNode; wide?: boolean }) {
+  return <section className={`profile-section${wide ? " profile-section-wide" : ""}`}><p className="eyebrow">{number} / RECORD DETAIL</p><h2>{title}</h2><div className="profile-section-content">{children}</div></section>;
 }
 
 function Fact({ label, value }: { label: string; value: string }) {

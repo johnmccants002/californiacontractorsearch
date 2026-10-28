@@ -34,33 +34,26 @@ export default async function ClassificationPage({ params, searchParams }: PageP
   const { contractors, source } = await getContractorsForClassification(classification.slug, filters);
   const code = displayClassificationCode(classification.code);
 
-  return (
-    <div className="page-shell py-10 sm:py-14">
-      <div className="mx-auto max-w-5xl">
-        <nav aria-label="Breadcrumb" className="text-sm text-slate-500"><Link href="/" className="hover:text-blue-900">Home</Link> <span aria-hidden="true">/</span> <span>{code}</span></nav>
-        <header className="mt-6 max-w-3xl">
-          <p className="font-mono text-sm font-bold text-blue-800">Classification {code}</p>
-          <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">{code} {classification.name.replace(" Contractor", "")}s in California</h1>
-          <p className="mt-5 text-lg leading-8 text-slate-600">{classification.description}</p>
-          {source === "demo" ? <p className="mt-3 text-sm text-amber-800">Results below are fictional demonstration records.</p> : null}
-        </header>
+  return <div className="page-shell inner-page">
+    <nav aria-label="Breadcrumb" className="breadcrumb"><Link href="/">Home</Link><span aria-hidden="true">/</span><Link href="/#trades">Trade index</Link><span aria-hidden="true">/</span><span>{code}</span></nav>
+    <header className="classification-header"><span className="classification-code" aria-hidden="true">{code}</span><div>
+      <p className="eyebrow">CALIFORNIA LICENSE CLASSIFICATION / {code}</p>
+      <h1 className="page-title">{classification.name.replace(" Contractor", "")} contractors in California</h1>
+      <p className="page-intro">{classification.description}</p>
+      {source === "demo" ? <p className="record-warning">Results below are fictional demonstration records.</p> : null}
+    </div></header>
 
-        <form className="mt-9 grid gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_auto]" aria-label="Filter classification results">
-          <label className="text-sm font-semibold text-slate-700">Business name<input type="search" name="q" defaultValue={filters.q} className="mt-2 h-11 w-full rounded-lg border border-slate-300 px-3 font-normal outline-none focus:border-blue-700 focus:ring-4 focus:ring-blue-100" /></label>
-          <label className="text-sm font-semibold text-slate-700">City<input type="text" name="city" defaultValue={filters.city} className="mt-2 h-11 w-full rounded-lg border border-slate-300 px-3 font-normal outline-none focus:border-blue-700 focus:ring-4 focus:ring-blue-100" /></label>
-          <label className="text-sm font-semibold text-slate-700">ZIP<input type="text" inputMode="numeric" name="zip" defaultValue={filters.zip} className="mt-2 h-11 w-full rounded-lg border border-slate-300 px-3 font-normal outline-none focus:border-blue-700 focus:ring-4 focus:ring-blue-100" /></label>
-          <label className="text-sm font-semibold text-slate-700">Status<select name="status" defaultValue={filters.status ?? ""} className="mt-2 h-11 w-full rounded-lg border border-slate-300 bg-white px-3 font-normal outline-none focus:border-blue-700 focus:ring-4 focus:ring-blue-100"><option value="">Any</option><option>ACTIVE</option><option>EXPIRED</option><option>INACTIVE</option><option>SUSPENDED</option></select></label>
-          <button className="button-primary h-11 self-end">Filter</button>
-        </form>
-
-        <div className="mt-8 flex items-center justify-between"><h2 className="text-xl font-bold text-slate-950">{contractors.length} contractor{contractors.length === 1 ? "" : "s"}</h2></div>
-        <div className="mt-5 space-y-4">
-          {contractors.map((contractor) => <ResultCard key={contractor.id} contractor={contractor} />)}
-          {!contractors.length ? <div className="rounded-2xl border border-slate-200 bg-white p-8 text-slate-600">No contractors match these filters.</div> : null}
-        </div>
-
-        <div className="mt-12"><Sponsorship classification={code} /></div>
-      </div>
-    </div>
-  );
+    <form className="classification-form" aria-label="Filter classification results">
+      <label className="filter-label">Business name<input type="search" name="q" defaultValue={filters.q} className="field-input" /></label>
+      <label className="filter-label">City<input type="text" name="city" defaultValue={filters.city} className="field-input" /></label>
+      <label className="filter-label">ZIP<input type="text" inputMode="numeric" name="zip" defaultValue={filters.zip} className="field-input" /></label>
+      <label className="filter-label">Status<select name="status" defaultValue={filters.status ?? ""} className="field-input"><option value="">Any</option><option>ACTIVE</option><option>EXPIRED</option><option>INACTIVE</option><option>SUSPENDED</option></select></label>
+      <button className="button-primary self-end">Filter →</button>
+    </form>
+    <div className="results-heading"><h2>{contractors.length} contractor{contractors.length === 1 ? "" : "s"}</h2><p>Registered addresses, not service areas.<br />Verify current information with CSLB.</p></div>
+    {contractors.length ? <div className="results-list">{contractors.map((contractor) => <ResultCard key={contractor.id} contractor={contractor} />)}</div> :
+      <div className="empty-state"><p className="eyebrow">NO RECORDS TO DISPLAY</p><h2>No contractors match these filters.</h2><p>Try a broader location or remove a filter.</p><Link href={`/classification/${classification.slug}`} className="button-secondary">Clear filters</Link></div>
+    }
+    <div className="mt-12"><Sponsorship classification={code} /></div>
+  </div>;
 }

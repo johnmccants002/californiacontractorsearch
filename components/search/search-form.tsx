@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { Arrow, SearchIcon } from "@/components/brand";
 
-const examples = ["1 Demolition", "1082303", "Plumbers in Sacramento", "C-36 Sacramento", "Demolition in El Cerrito"];
+const examples = ["1 Demolition", "1082303", "Plumbers in Sacramento", "C-36 Sacramento"];
 
 interface SearchFormProps {
   defaultValue?: string;
@@ -9,35 +10,18 @@ interface SearchFormProps {
 }
 
 export function SearchForm({ defaultValue = "", compact = false, showExamples = false }: SearchFormProps) {
-  return (
-    <div>
-      <form action="/search" role="search" className="flex flex-col gap-3 sm:flex-row">
-        <label htmlFor={compact ? "search-compact" : "search-main"} className="sr-only">
-          Search contractor licenses
-        </label>
-        <input
-          id={compact ? "search-compact" : "search-main"}
-          type="search"
-          name="q"
-          defaultValue={defaultValue}
-          placeholder="Search contractor, license number, trade, city, or ZIP"
-          autoComplete="off"
-          className={`min-w-0 flex-1 rounded-xl border border-slate-300 bg-white text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-700 focus:ring-4 focus:ring-blue-100 ${compact ? "h-12 px-4 text-base" : "h-14 px-5 text-base sm:text-lg"}`}
-        />
-        <button type="submit" className={`button-primary shrink-0 ${compact ? "h-12" : "h-14"}`}>
-          Search
-        </button>
-      </form>
-      {showExamples ? (
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500">
-          <span>Try:</span>
-          {examples.map((example) => (
-            <Link key={example} href={`/search?q=${encodeURIComponent(example)}`} className="font-medium text-blue-800 underline decoration-blue-200 underline-offset-4 hover:decoration-blue-700">
-              {example}
-            </Link>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
+  const id = compact ? "search-compact" : "search-main";
+  return <div>
+    <form action="/search" role="search">
+      <label htmlFor={id} className="search-label">Search California contractor licenses</label>
+      <div className={`search-bar${compact ? " search-bar-compact" : ""}`}>
+        <span className="search-input-wrap"><SearchIcon /><input id={id} type="search" name="q" defaultValue={defaultValue} maxLength={200}
+          placeholder="Name, license #, trade, or city" autoComplete="off" /></span>
+        <button type="submit" className="button-primary">Search <Arrow /></button>
+      </div>
+    </form>
+    {showExamples ? <div className="search-examples"><span className="technical">TRY</span>{examples.map((example) =>
+      <Link key={example} href={`/search?q=${encodeURIComponent(example)}`}>{example} <span aria-hidden="true">↗</span></Link>
+    )}</div> : null}
+  </div>;
 }

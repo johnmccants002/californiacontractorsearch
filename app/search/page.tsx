@@ -37,40 +37,34 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   }
   const hasSearch = Boolean(state.query || hasSearchFilters(state.filters));
 
-  return (
-    <div className="page-shell py-10 sm:py-14">
-      <div className="mx-auto max-w-5xl">
-        <SearchControls key={`${searchHref(state)}:${error ?? ""}`} state={state} catalog={catalog} error={error} />
+  return <div className="page-shell inner-page">
+    <header className="search-page-heading"><div><p className="eyebrow"><span>01</span> / THE SEARCH INDEX</p><h1>Find a contractor.</h1></div>
+      <p>Search public license records. Refine by trade, registered location, or license status.</p>
+    </header>
+    <SearchControls key={`${searchHref(state)}:${error ?? ""}`} state={state} catalog={catalog} error={error} />
 
-        {!hasSearch && !error ? (
-          <section className="mt-14 rounded-2xl border border-slate-200 bg-white p-8 text-center">
-            <h1 className="text-2xl font-bold text-slate-950">Search California contractor licenses</h1>
-            <p className="mx-auto mt-3 max-w-xl text-slate-600">Enter a license number, business or personnel name, trade, classification, city, or ZIP code.</p>
-          </section>
-        ) : data ? (
-          <>
-            <header className="mt-10 border-b border-slate-200 pb-5">
-              <p className="text-sm font-semibold text-blue-800">{data.total} {data.total === 1 ? "result" : "results"}</p>
-              <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">{state.query ? `Search results for “${state.query}”` : "Contractors matching your filters"}</h1>
-              {data.interpretation ? <p className="mt-3 text-sm text-slate-600">Your search was converted into the editable filters above.</p> : null}
-              {data.source === "demo" ? <p className="mt-3 text-sm text-amber-800">Showing fictional demonstration records. Connect Supabase and load current public data before production use.</p> : null}
-            </header>
+    {!hasSearch && !error ? <section className="empty-state">
+      <p className="eyebrow">YOUR SEARCH STARTS HERE</p><h2>A name. A number. A place.</h2>
+      <p>Enter a license number, business or personnel name, trade, classification, city, or ZIP code. Or use the filters above to explore a trade.</p>
+    </section> : data ? <>
+      <header className="results-heading"><div>
+        <p className="eyebrow">{data.total.toLocaleString("en-US")} {data.total === 1 ? "RESULT" : "RESULTS"} / LICENSE RECORDS</p>
+        <h2 className="mt-2">{state.query ? `Search results for “${state.query}”` : "Contractors matching your filters"}</h2>
+        {data.interpretation ? <p>Your search was converted into the editable filters above.</p> : null}
+        {data.source === "demo" ? <p className="record-warning">Showing fictional demonstration records. Connect Supabase and load current public data before production use.</p> : null}
+      </div><p>{data.source === "demo" ? "Fictional demonstration records." : "Not a live CSLB status check."}<br />Verify current details with CSLB.</p></header>
 
-            {data.results.length ? (
-              <div className="mt-6 space-y-4">
-                {data.results.map((result) => <ResultCard key={result.contractor.id} contractor={result.contractor} matchedBy={result.matchedBy} />)}
-                <Pagination page={data.page} totalPages={data.totalPages} state={state} />
-              </div>
-            ) : (
-              <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-8">
-                <h2 className="text-xl font-bold text-slate-950">{data.total ? "This page is beyond the last result." : "No contractors matched your search."}</h2>
-                <p className="mt-3 text-slate-600">{data.total ? "Return to the first page with your filters intact." : "Try fewer words or remove a filter to broaden your search."}</p>
-                <Link href={data.total ? searchHref(state) : clearFiltersHref(state)} className="button-secondary mt-5">{data.total ? "Back to first page" : "Clear filters"}</Link>
-              </section>
-            )}
-          </>
-        ) : null}
-      </div>
-    </div>
-  );
+      {data.results.length ? <>
+        <div className="results-list">{data.results.map((result) => <ResultCard key={result.contractor.id} contractor={result.contractor} matchedBy={result.matchedBy} />)}</div>
+        <Pagination page={data.page} totalPages={data.totalPages} state={state} />
+      </> : <section className="empty-state">
+        <p className="eyebrow">NO RECORDS TO DISPLAY</p>
+        <h2>{data.total ? "This page is beyond the last result." : "No contractors matched your search."}</h2>
+        <p>{data.total ? "Return to the first page with your filters intact." : "Try fewer words, check the spelling, or remove a filter to broaden your search."}</p>
+        <div className="flex flex-wrap gap-3"><Link href={data.total ? searchHref(state) : clearFiltersHref(state)} className="button-secondary">{data.total ? "Back to first page" : "Clear filters"}</Link>
+          {!data.total ? <Link href="/search" className="button-secondary">Start a new search</Link> : null}
+        </div>
+      </section>}
+    </> : null}
+  </div>;
 }
