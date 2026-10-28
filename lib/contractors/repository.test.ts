@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { getAllContractors, getContractorByLicense, getDatasetSource } from "./repository";
+import { getAllContractors, getContractorByLicense, getContractorsForClassificationFromDatabase, getDatasetSource } from "./repository";
 import { recordSource, sourceDate } from "./provenance";
 
 vi.mock("server-only", () => ({}));
@@ -29,6 +29,33 @@ describe("record provenance", () => {
 });
 
 describe("source-aware repository", () => {
+  it("hydrates bounded trade IDs in order without dropping other classifications", async () => {
+    const requests: URL[] = [];
+    const client = createClient("https://records.test", "test-public-key", { auth: { persistSession: false }, global: {
+      fetch: async (input) => {
+        const url = new URL(String(input));
+        requests.push(url);
+        const data = url.searchParams.has("id") ? [{
+          id: 9, license_number: "9999999", business_name: "TEST CONTRACTOR", source_status: "CLEAR",
+          license_classifications: [{ classifications: { id: 1, code: "c21", slug: "c21", name: "Demolition" } }],
+        }, {
+          id: 1, license_number: "1082303", business_name: "1 DEMOLITION", source_status: "CLEAR",
+          license_classifications: [
+            { classifications: { id: 1, code: "c21", slug: "c21", name: "Demolition" } },
+            { classifications: { id: 2, code: "d06", slug: "d06", name: "Concrete Related Services" } },
+          ],
+        }] : [{ id: 9 }, { id: 1 }];
+        return new Response(JSON.stringify(data), { headers: { "content-type": "application/json" } });
+      },
+    } });
+    vi.mocked(createServerSupabaseClient).mockReturnValue(client);
+    const contractors = await getContractorsForClassificationFromDatabase("c21", {});
+    expect(contractors?.map((contractor) => contractor.id)).toEqual([1, 9]);
+    expect(contractors?.[0].classifications.map((item) => item.code)).toEqual(["c21", "d06"]);
+    expect(requests).toHaveLength(2);
+    expect(requests[0].searchParams.get("limit")).toBe("100");
+    expect(requests[1].searchParams.get("id")).toBe("in.(1,9)");
+  });
   it("uses labeled demo data only without a configured database", async () => {
     vi.mocked(createServerSupabaseClient).mockReturnValue(null);
     expect(await getDatasetSource()).toBe("demo");

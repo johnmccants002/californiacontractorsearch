@@ -13,6 +13,13 @@ export const siteConfig = {
     "California Contractor Search is an independent service and is not affiliated with the California Contractors State License Board (CSLB).",
 } as const;
 
+export function getCslbLicenseUrl(licenseNumber?: string): string {
+  const number = licenseNumber?.trim();
+  return number && /^\d+$/.test(number)
+    ? `https://www.cslb.ca.gov/${number}`
+    : siteConfig.cslbLookupUrl;
+}
+
 export const featuredClassifications = [
   { code: "B", name: "General Building", slug: "b" },
   { code: "C-10", name: "Electrical", slug: "c10" },

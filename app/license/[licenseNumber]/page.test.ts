@@ -17,6 +17,8 @@ describe("profile indexing and source presentation", () => {
     expect(html).not.toContain("application/ld+json");
     expect(html).not.toContain("Source: CSLB public records");
     expect(html).toContain(dataSource === "demo" ? "Fictional demonstration record" : "Record source unconfirmed");
+    expect(html.match(/href="https:\/\/www\.cslb\.ca\.gov\/OnlineServices\/CheckLicenseII\/CheckLicense\.aspx"/g)).toHaveLength(2);
+    expect(html).not.toContain('href="https://www.cslb.ca.gov/1056730"');
   });
   it("indexes imported records and puts verification before the details", async () => {
     vi.mocked(getContractorByLicense).mockResolvedValue({ ...demoContractors[0], dataSource: "cslb" });
@@ -25,6 +27,8 @@ describe("profile indexing and source presentation", () => {
     expect(html).toContain("application/ld+json");
     expect(html).not.toMatch(/fictional|MVP|demonstration records/i);
     expect(html.indexOf("Record source and verification")).toBeLessThan(html.indexOf(">License Information<"));
+    expect(html.match(/href="https:\/\/www\.cslb\.ca\.gov\/1056730"/g)).toHaveLength(2);
+    expect(html).not.toContain("CheckLicense.aspx");
   });
   it("does not index missing records", async () => {
     vi.mocked(getContractorByLicense).mockResolvedValue(undefined);

@@ -35,6 +35,14 @@ describe("architectural UI contracts", () => {
     expect(html).toContain('aria-hidden="true"');
     expect(html).not.toMatch(/<img|<script/);
   });
+  it("insets dropdown arrows with room for text and retains native high-contrast controls", () => {
+    const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    const select = css.match(/select\.field-input\s*\{([^}]+)\}/)![1];
+    expect(select).toContain("appearance: none");
+    expect(select).toContain("padding-right: 2.5rem");
+    expect(select).toContain("background-position: right .75rem center");
+    expect(css).toMatch(/forced-colors: active[\s\S]*select\.field-input\s*\{[^}]*appearance: auto; background-image: none/);
+  });
   it("keeps search as a labeled native GET form", () => {
     const html = renderToStaticMarkup(createElement(SearchForm, { defaultValue: "1 Demolition", showExamples: true }));
     expect(html).toContain('action="/search"');

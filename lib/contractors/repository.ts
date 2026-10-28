@@ -7,6 +7,7 @@ import { searchLicenseIds } from "@/lib/search/database-search";
 import type { FilterInput, SearchState } from "@/lib/search/filters";
 import type { SearchClassification } from "@/lib/search/trade-location";
 import { recordSource, type DatasetSource } from "./provenance";
+import { getClassificationLicenseIds, type ClassificationFilters } from "./classification-query";
 
 const CONTRACTOR_SELECT = `
   *,
@@ -17,11 +18,6 @@ const CONTRACTOR_SELECT = `
 `;
 
 type DbRow = Record<string, unknown>;
-
-type ClassificationRpcRow = {
-  license_id: number;
-  total_count: number;
-};
 
 function mapClassification(row: DbRow): Classification {
   return {
@@ -147,23 +143,13 @@ export async function getSearchClassifications(): Promise<SearchClassification[]
 
 export async function getContractorsForClassificationFromDatabase(
   classificationSlug: string,
-  filters: { q?: string; city?: string; zip?: string; status?: string },
+  filters: ClassificationFilters,
 ): Promise<Contractor[] | null> {
   const client = createServerSupabaseClient();
   if (!client) return null;
 
-  const { data, error } = await client.rpc("classification_license_ids", {
-    classification_slug: classificationSlug,
-    business_query: filters.q ?? null,
-    city_filter: filters.city ?? null,
-    zip_filter: filters.zip ?? null,
-    status_filter: filters.status ?? null,
-    result_limit: 100,
-  });
-  if (error) throw new Error(`Supabase classification query failed: ${error.message}`);
-
-  const rows = (data ?? []) as ClassificationRpcRow[];
-  return hydrateContractors(client, rows.map((row) => Number(row.license_id)));
+  const ids = await getClassificationLicenseIds(client, classificationSlug, filters);
+  return hydrateContractors(client, ids);
 }
 
 export async function getAllContractors(): Promise<{ contractors: Contractor[]; source: "demo" | "supabase" }> {
