@@ -76,12 +76,12 @@ function mergeCookies(current, response) {
   return [...cookies].map(([name, value]) => `${name}=${value}`).join("; ");
 }
 
-async function request(url, options = {}, cookie = "") {
+async function request(url, options = {}, cookie = "", timeoutMs = 120_000) {
   const headers = new Headers(options.headers);
   headers.set("User-Agent", "CaliforniaContractorSearch/0.1 (+official CSLB public-data importer)");
   if (cookie) headers.set("Cookie", cookie);
 
-  const response = await fetch(url, { ...options, headers, redirect: "follow", signal: AbortSignal.timeout(120_000) });
+  const response = await fetch(url, { ...options, headers, redirect: "follow", signal: AbortSignal.timeout(timeoutMs) });
   const nextCookie = mergeCookies(cookie, response);
   if (!response.ok) {
     throw new Error(`CSLB request failed with HTTP ${response.status} for ${url}`);
@@ -127,6 +127,9 @@ export async function downloadDataset(dataset, directory = outputDirectory) {
       body: form,
     },
     selected.cookie,
+    // A 75+ MiB CSLB CSV can exceed two minutes on a healthy slow connection.
+    // Keep the complete streaming download bounded; portal requests stay at 2m.
+    600_000,
   );
 
   if (!response.body) throw new Error(`CSLB returned an empty body for ${dataset.filename}`);

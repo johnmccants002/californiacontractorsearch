@@ -138,4 +138,4 @@ async function main() {
     console.log(JSON.stringify({completed:id,counts:manifest.counts,retainedLicenses:retainedIds.length,expectedIndexCount,sourceDates:manifest.dates,sourceRecordsDeleted:0,aliasChanged:false}));
   } finally { snapshot?.close();await releaseLock(); }
 }
-main().catch(error=>{console.error(error instanceof Error && error.constructor===Error ? error.message : "Refresh stopped; checkpoints retained. Raw errors suppressed to protect credentials and records.");process.exitCode=1;});
+main().catch(error=>{console.error(error instanceof Error && error.name==="TimeoutError" ? "A source request timed out; partial files/checkpoints retained and no incomplete download accepted." : error instanceof Error && error.constructor===Error ? error.message : "Refresh stopped; checkpoints retained. Raw errors suppressed to protect credentials and records.");process.exitCode=1;});
