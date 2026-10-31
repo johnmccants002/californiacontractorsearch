@@ -33,6 +33,13 @@ describe("optional index and database fallback", () => {
     await expect(searchContractors("x")).rejects.toThrow("Invalid input");
     expect(searchContractorsFromDatabase).not.toHaveBeenCalled();
   });
+  it("never drops a friendly location constraint during an outage or when disabled", async () => {
+    vi.mocked(searchTypesenseContractors).mockRejectedValue(new Error("outage"));
+    await expect(searchContractors("plumber", 1, 10, { near: "95814" })).rejects.toThrow("Location search");
+    vi.stubEnv("TYPESENSE_ENABLED", "false");
+    await expect(searchContractors("plumber", 1, 10, { near: "Sacramento" })).rejects.toThrow("Location search");
+    expect(searchContractorsFromDatabase).not.toHaveBeenCalled();
+  });
   it("keeps SEO directory reads independent even when the feature flag is on", async () => {
     await searchDatabaseContractors("", 1, 20, { classification: "c36", city: "Sacramento" });
     expect(searchTypesenseContractors).not.toHaveBeenCalled();

@@ -7,7 +7,7 @@ import { hasGeoInput, type GeoFilter } from "./geo";
 export class SearchInputError extends Error {}
 
 export const LICENSE_STATUSES: LicenseStatus[] = ["ACTIVE", "EXPIRED", "SUSPENDED", "INACTIVE"];
-export type FilterInput = Partial<Record<"classification" | "city" | "county" | "zip" | "status" | "sort" | "lat" | "lng" | "radius", string>>;
+export type FilterInput = Partial<Record<"classification" | "city" | "county" | "zip" | "status" | "sort" | "near" | "lat" | "lng" | "radius", string>>;
 export interface SearchFilters {
   classification: string;
   city: string;
@@ -16,6 +16,7 @@ export interface SearchFilters {
   status: LicenseStatus | "";
   sort: "relevance" | "name" | "distance";
   geo?: GeoFilter;
+  near?: string;
 }
 export interface SearchState {
   query: string;
@@ -24,10 +25,15 @@ export interface SearchState {
 
 /** Empty GET form controls mean “not selected,” not an override of a new phrase. */
 export function readFilterParams(params: Record<string, string | string[] | undefined>): FilterInput {
-  return Object.fromEntries(["classification", "city", "county", "zip", "status", "sort", "lat", "lng", "radius"].flatMap((key) => {
+  const filters: FilterInput = Object.fromEntries(["classification", "city", "county", "zip", "status", "sort", "near", "lat", "lng", "radius"].flatMap((key) => {
     const value = params[key];
     return typeof value === "string" && value.trim() ? [[key, value]] : [];
   }));
+  if (params.nearby === "1") {
+    filters.sort = "distance";
+    filters.radius ||= "25";
+  }
+  return filters;
 }
 
 export function normalizeFilters(input: FilterInput = {}): SearchFilters {
@@ -52,6 +58,7 @@ export function normalizeFilters(input: FilterInput = {}): SearchFilters {
     status: status as LicenseStatus | "",
     sort: input.sort === "name" || input.sort === "distance" ? input.sort : "relevance",
     ...(geo ? { geo } : {}),
+    ...(input.near?.trim() ? { near: input.near.trim() } : {}),
   };
 }
 
@@ -74,7 +81,7 @@ export function validateClassification(input: FilterInput, catalog: SearchClassi
 }
 
 export function hasSearchFilters(filters: SearchFilters): boolean {
-  return Boolean(filters.classification || filters.city || filters.county || filters.zip || filters.status || filters.geo);
+  return Boolean(filters.classification || filters.city || filters.county || filters.zip || filters.status || filters.geo || filters.near);
 }
 
 export function searchHref(state: SearchState, page = 1): string {
@@ -83,9 +90,13 @@ export function searchHref(state: SearchState, page = 1): string {
   for (const name of ["classification", "city", "county", "zip", "status"] as const) {
     if (state.filters[name]) params.set(name, state.filters[name]);
   }
-  if (state.filters.sort !== "relevance") params.set("sort", state.filters.sort);
+  // Friendly centers default to distance, so preserve an explicit relevance override.
+  if (state.filters.sort !== "relevance" || state.filters.near) params.set("sort", state.filters.sort);
+  if (state.filters.near) params.set("near", state.filters.near);
   if (state.filters.geo) {
-    params.set("lat", String(state.filters.geo.latitude)); params.set("lng", String(state.filters.geo.longitude));
+    if (!state.filters.near) {
+      params.set("lat", String(state.filters.geo.latitude)); params.set("lng", String(state.filters.geo.longitude));
+    }
     if (state.filters.geo.radiusMiles !== undefined) params.set("radius", String(state.filters.geo.radiusMiles));
   }
   if (page > 1) params.set("page", String(page));
@@ -93,7 +104,7 @@ export function searchHref(state: SearchState, page = 1): string {
 }
 
 export function removeFilterHref(state: SearchState, name: keyof SearchFilters): string {
-  if (name === "geo") return searchHref({ ...state, filters: { ...state.filters, geo: undefined, sort: state.filters.sort === "distance" ? "relevance" : state.filters.sort } });
+  if (name === "geo" || name === "near") return searchHref({ ...state, filters: { ...state.filters, geo: undefined, near: undefined, sort: state.filters.sort === "distance" ? "relevance" : state.filters.sort } });
   return searchHref({ ...state, filters: { ...state.filters, [name]: name === "sort" ? "relevance" : "" } });
 }
 

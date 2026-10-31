@@ -15,6 +15,7 @@
     "search:benchmark": "tsx --conditions=react-server scripts/benchmark-typesense.ts",
     "geo:import": "tsx --conditions=react-server scripts/geocode-contractors.ts",
     "data:download": "node scripts/download-cslb-data.mjs",
+    "data:refresh": "tsx --conditions=react-server scripts/refresh-cslb.ts",
     "data:import": "node scripts/import-cslb-data.mjs",
     "data:finalize": "node scripts/import-cslb-data.mjs --finalize-only"
   },

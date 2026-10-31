@@ -1,5 +1,5 @@
 export interface GeoFilter { latitude: number; longitude: number; radiusMiles?: number }
-export const hasGeoInput = (input: { lat?: string; lng?: string; radius?: string; sort?: string }) => Boolean(input.lat?.trim() || input.lng?.trim() || input.radius?.trim() || input.sort === "distance");
+export const hasGeoInput = (input: { near?: string; lat?: string; lng?: string; radius?: string; sort?: string }) => Boolean(input.near?.trim() || input.lat?.trim() || input.lng?.trim() || input.radius?.trim() || input.sort === "distance");
 export function geoEnabled() { return process.env.CENSUS_GEOCODING_ENABLED === "true"; }
 export function distanceMiles(from: GeoFilter, to: [number, number]) {
   const radians = (n: number) => n * Math.PI / 180;

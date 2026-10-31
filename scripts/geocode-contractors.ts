@@ -8,6 +8,7 @@ import { geocodeBatch } from "../lib/geocoding/census";
 import { GeocodingStore } from "../lib/geocoding/store";
 import { runGeocodingJob, type SourceAddress } from "../lib/geocoding/pipeline";
 import { recordSource } from "../lib/contractors/provenance";
+import { acquireMaintenanceLock } from "../lib/refresh/lock.mjs";
 
 const args = process.argv.slice(2);
 const argument = (name: string) => args.includes(name) ? args[args.indexOf(name) + 1] : undefined;
@@ -78,4 +79,9 @@ async function main() {
     console.log(JSON.stringify({ job: job.id, phase: store.job(job.id).phase, counts: store.counts(job.id), typesenseSyncIds: syncIds.length, note: "Index sync is a separate command; no alias or application flag changed." }));
   } finally { store?.close(); await lock.close(); await unlink(lockPath); }
 }
-main().catch((error: unknown) => { console.error(error instanceof Error && error.constructor === Error ? error.message : "Geocoding worker stopped. Check migration/configuration, service availability, and the saved job. Raw errors are suppressed to protect addresses and credentials. Use --help for recovery commands."); process.exitCode = 1; });
+async function lockedMain() {
+  if (!args.includes("--run")) return main();
+  const release = await acquireMaintenanceLock();
+  try { await main(); } finally { await release(); }
+}
+lockedMain().catch((error: unknown) => { console.error(error instanceof Error && error.constructor === Error ? error.message : "Geocoding worker stopped. Check migration/configuration, service availability, and the saved job. Raw errors are suppressed to protect addresses and credentials. Use --help for recovery commands."); process.exitCode = 1; });

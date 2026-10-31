@@ -9,10 +9,12 @@ import type { PaginatedResults } from "@/lib/contractors/types";
 import { normalizeText } from "@/lib/search/normalize";
 import { distanceMiles, geoEnabled, hasGeoInput } from "@/lib/search/geo";
 import { SearchInputError } from "@/lib/search/filters";
+import { resolveLocationInput } from "@/lib/search/location-reference";
 
 export async function searchTypesenseContractors(query: string, page: number, pageSize: number, filters: FilterInput, catalog?: SearchClassification[]): Promise<PaginatedResults> {
   const geographic = hasGeoInput(filters);
   if (geographic && !geoEnabled()) throw new SearchInputError("Location search is not enabled yet. Remove the location filter to continue.");
+  filters = resolveLocationInput(filters);
   const { client, collection } = createTypesenseSearchClient();
   // One total deadline across readiness, interpretation probes, and results.
   const signal = AbortSignal.timeout(2500);

@@ -8,6 +8,7 @@ import { assertCompleteIndex, assertImportSuccess, incrementalRemovals, parseIds
 import { loadTypesenseEnvironment } from "./typesense-env";
 import { safeTypesenseError } from "../lib/typesense/errors";
 import { geoEnabled } from "../lib/search/geo";
+import { acquireMaintenanceLock } from "../lib/refresh/lock.mjs";
 
 const args = process.argv.slice(2);
 const argument = (name: string) => args.includes(name) ? args[args.indexOf(name) + 1] : undefined;
@@ -150,7 +151,12 @@ async function main() {
   } finally { await lock.close(); await unlink(lockPath); }
 }
 
-main().catch((error: unknown) => {
+async function lockedMain() {
+  if (args.includes("--help")) return main();
+  const release = await acquireMaintenanceLock();
+  try { await main(); } finally { await release(); }
+}
+lockedMain().catch((error: unknown) => {
   // SDK/Axios errors can embed authentication headers. Only our own plain Errors
   // are printable; suppress payloads, stacks, and non-local exception subclasses.
   console.error(error instanceof Error && error.constructor === Error ? error.message : safeTypesenseError(error));

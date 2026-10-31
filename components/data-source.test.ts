@@ -3,8 +3,30 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { DatasetNotice, LicenseVerification } from "./data-source";
 import { demoContractors } from "@/lib/contractors/demo-data";
+import { ResultCard } from "./search/result-card";
 
 describe("source disclosure", () => {
+  it("warns about absent imported records without inventing a new license status", () => {
+    const contractor = { ...demoContractors[0], dataSource: "cslb" as const, sourceMissingSince: "2026-10-28" };
+    const profile = renderToStaticMarkup(createElement(LicenseVerification, { contractor }));
+    expect(profile).toContain("Not in latest CSLB download—verify with CSLB");
+    expect(profile).toContain("does not establish whether");
+    expect(profile).toContain('dateTime="2026-10-28"');
+    expect(profile).toContain('href="https://www.cslb.ca.gov/1056730"');
+    const card = renderToStaticMarkup(createElement(ResultCard, { contractor }));
+    expect(card).toContain("Last known: ACTIVE");
+    expect(card).toContain("status-last-known");
+    expect(card).not.toContain("status-active");
+    expect(card).toContain('href="/license/1056730"');
+    expect(card.match(/<a\b/g)).toHaveLength(1);
+  });
+  it("removes the warning when a source record returns, without affecting ordinary cards", () => {
+    const contractor = { ...demoContractors[0], dataSource: "cslb" as const, sourceMissingSince: undefined };
+    const html = renderToStaticMarkup(createElement(ResultCard, { contractor }));
+    expect(html).toContain("status-active");
+    expect(html).not.toContain("Last known:");
+    expect(html).not.toContain("Not in latest");
+  });
   it("describes imported data without claiming live verification", () => {
     const html = renderToStaticMarkup(createElement(DatasetNotice, { source: "cslb" }));
     expect(html).toContain("imported public CSLB");

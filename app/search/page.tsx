@@ -7,6 +7,9 @@ import { searchContractors } from "@/lib/search/search-contractors";
 import { getSearchClassifications } from "@/lib/contractors/repository";
 import { clearFiltersHref, hasSearchFilters, LICENSE_STATUSES, normalizeFilters, readFilterParams, searchHref, SearchInputError, type SearchState } from "@/lib/search/filters";
 import type { PaginatedResults, LicenseStatus } from "@/lib/contractors/types";
+import { resolveLocationInput } from "@/lib/search/location-reference";
+import { DataFreshness } from "@/components/data-freshness";
+import { getDataFreshness } from "@/lib/refresh/freshness";
 
 export const metadata: Metadata = {
   title: "Search California Contractor Licenses",
@@ -31,20 +34,23 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   try {
     // Keep removable chips for valid filters even when the backend is unavailable.
     // Invalid raw values remain visible in the form so users can correct them.
-    state.filters = normalizeFilters(filters);
-    data = await searchContractors(query, page, 10, filters, catalog);
+    const resolved = resolveLocationInput(filters);
+    state.filters = normalizeFilters(resolved);
+    data = await searchContractors(query, page, 10, resolved, catalog);
     state = data.state;
   } catch (cause) {
     if (!(cause instanceof SearchInputError)) throw cause;
     error = cause.message;
   }
   const hasSearch = Boolean(state.query || hasSearchFilters(state.filters));
+  const freshness = data?.source === "supabase" ? await getDataFreshness() : undefined;
 
   return <div className="page-shell inner-page">
     <header className="search-page-heading"><div><p className="eyebrow"><span>01</span> / THE SEARCH INDEX</p><h1>Find a contractor.</h1></div>
       <p>Search public license records. Refine by trade, registered location, or license status.</p>
     </header>
     <SearchControls key={`${searchHref(state)}:${error ?? ""}`} state={state} catalog={catalog} error={error} geoInput={filters} />
+    {freshness ? <DataFreshness data={freshness} /> : null}
 
     {!hasSearch && !error ? <section className="empty-state">
       <p className="eyebrow">YOUR SEARCH STARTS HERE</p><h2>A name. A number. A place.</h2>

@@ -151,7 +151,20 @@ Apply `20261026053344_add_filtered_contractor_search.sql` before deploying this 
 
 Examples: `plumbers in Sacramento`, `C-36 Sacramento`, `demolition in El Cerrito`, `plumbers in 95814`. Optional `CA`/`California` suffixes and city + ZIP are supported. Explicit location searches stay empty when there are no matches; they never silently broaden into statewide fuzzy matches. Trade-first phrases without `in` require a known city, and exact contractor names retain precedence. `1 Demolition` and license `1082303` still use name/license search.
 
-Location means **registered business location**, not service area. The baseline database search has no proximity search; opt-in Census/Typesense radius support is documented below. Automatic “near me” geolocation, city misspelling correction, location-first phrases, and additional trade aliases are not included. Alias coverage is driven by `classifications.aliases`; imported codes without aliases still work as classification-code searches.
+Location means **registered business location**, not service area. The baseline database search has no proximity search; opt-in Census/Typesense radius support is documented below. The nearby controls support city/ZIP reference points and permission-based device location. City misspelling correction, location-first phrases, and additional trade aliases are not included. Alias coverage is driven by `classifications.aliases`; imported codes without aliases still work as classification-code searches.
+
+### User-friendly nearby search
+
+With both `TYPESENSE_ENABLED=true` and `CENSUS_GEOCODING_ENABLED=true`, the search page offers a separate **Search near** section:
+
+- Enter a California city/place or a mapped U.S. five-digit ZIP area, choose 10/25/50 miles or a custom radius (0.1–250 miles), and select **Find nearby**. This defaults to 25 miles and nearest-first sorting. The existing registered city/county/ZIP filters remain strict, additional constraints; choosing a center does not clear them.
+- **Use my location** requests one browser location fix only after a click. Permission denial, unsupported browsers, unavailable positions, and timeouts leave city/ZIP entry available. An in-flight request cannot overwrite a subsequently edited or cleared center. The position is rounded to three decimal places and is not applied until the user submits. Coordinates appear in the search URL, which should not be shared if private. No location tracking, local storage, or application location logging is added.
+- City/ZIP resolution uses the checked-in, server-only `data/locations/census-2025.json`: 1,619 California Census places and 33,791 U.S. ZIP Code Tabulation Areas (ZCTAs). These are **approximate area reference points**, not street addresses, USPS delivery boundaries, or contractor locations. Not every postal ZIP has a ZCTA. Unknown locations and duplicate place names require correction or a ZIP; the app never guesses or broadens the search. No runtime geocoding API, paid provider, new environment variable, migration, or index rebuild is required.
+- City/ZIP and manual-coordinate controls use native GET form submissions. JavaScript adds device location and preset buttons. Existing latitude/longitude URLs remain valid through the optional coordinate controls. Friendly centers, radius, and sorting survive pagination, filter chips, and autocomplete. Search and autocomplete remain non-indexable; index outages fail closed for location constraints.
+
+Examples: `/search?classification=c36&near=Sacramento&radius=25&sort=distance` and `/search?classification=c36&near=95814&radius=10&sort=distance`.
+
+Reference data comes from the [2025 Census Gazetteer files](https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2025_Gazetteer/) using their `INTPTLAT` / `INTPTLONG` fields ([record layouts](https://www.census.gov/programs-surveys/geography/technical-documentation/records-layout/gaz-record-layouts/gaz25-record-layouts.html)). The generated file retains source URLs and SHA-256 hashes. To reproduce it, download `2025_gaz_place_06.txt` and `2025_Gaz_zcta_national.zip` from that directory into `.data/location-reference/`, then run `node scripts/build-location-reference.mjs` (requires `unzip`). These public reference points **never fill in missing or rejected contractor coordinates**. Contractor inclusion still requires the existing accepted Census address match and current address hash.
 
 ### Search verification
 
@@ -322,16 +335,57 @@ Successful XML responses are eligible for one hour of shared-cache reuse. API fa
 
 Before deployment, confirm the primary HTTPS hostname resolves and is connected to the deployment, and set `siteConfig.url` to that origin. Canonicals, structured data, robots, and sitemap URLs must all use that same reachable origin. After deployment, verify that property in Google Search Console, inspect a curated page's live rendered content and indexing eligibility, and submit `{primary-origin}/sitemap.xml`. Submission and indexing are separate external steps; a sitemap does not guarantee indexing.
 
-## CSLB data refresh design
+## Repeatable CSLB refresh worker (activation required)
 
-The production source is CSLB's public datasets—not scraped CSLB search result pages.
+The source is the [official CSLB public downloads](https://www.cslb.ca.gov/OnlineServices/DataPortal/ContractorList), not scraped license-result pages. The three files have independent publication dates. `data:refresh` checks each date, downloads a stable release, validates headers, dates, row counts and exact cross-file joins, and saves immutable CSV hashes plus a normalized SQLite snapshot. A date-label change, malformed/incomplete file, entirely unrelated detail file, more than 10% row-count drop, or disappearance of more than 10% of existing source licenses stops processing for review **before source writes**. There is deliberately no bypass flag for those checks.
 
-The importer:
+**Unmatched detail rows are quarantined, not imported or deleted.** The master is the only source of contractor identities. The downloaded personnel/insurance files can contain IDs outside that master (for example a newer personnel release or historical insurance record). These rows remain intact in the original CSVs and normalized SQLite tables, but `batch()` selects parent licenses only from the master and attaches details by exact license number. No approximate/zero-stripped joins or synthetic parent records are used. `manifest.json` seals the matched/quarantined row and distinct-license counts; `preparation-review.json` records those counts and any existing database licenses absent from the master. Console output contains aggregate counts, not names, addresses or policy numbers. Review these reports before activation. The reconciliation policy is part of the release key, so pre-policy manifests must be re-prepared rather than silently resumed under different rules.
 
-1. Downloads the official license, personnel, and workers-compensation exports.
-2. Validates minimum row counts before changing live records.
-3. Stages normalized source values, then upserts licenses in resumable batches.
-4. Rebuilds classifications, personnel, bonds, workers compensation, and search text.
-5. Records the source release timestamp and clears staging only after verification succeeds.
+### Review and activate
+
+1. Review/apply `supabase/migrations/20261031054112_resumable_cslb_refresh.sql` and then `supabase/migrations/20261031072412_retain_missing_cslb_records.sql` through the normal migration process, first on staging. The original migration is unchanged. These add refresh metadata, private fingerprints/retention receipts, a private pending-index queue and bounded service-role-only security-invoker functions. Installation changes no existing contractor facts. Check Supabase security/performance advisors afterward. Public roles can read only aggregate freshness columns and the license warning date; they cannot read worker checkpoints/receipts or execute writers. **Deploy the warning-capable web code before enabling the worker**, so retained records are never presented without their warning. The web code tolerates the new nullable column being absent before migration; the worker requires the new migration before writing.
+2. Use a trusted **Node 22.13+ long-lived worker with persistent private storage**, not a Vercel request/function. Keep `.data/refresh`, `.data/census` (including SQLite WAL files/cache), and `.data/maintenance.lock` on the same protected volume. Configure the existing Supabase URL/anon key, worker service-role key and Typesense host/port/protocol/admin key/alias. A healthy, already-published schema-v2 index is required. Preserve the Census cache so unchanged addresses are not unnecessarily resubmitted.
+3. Run the read-only check, prepare a snapshot, review its counts and absence checks, then explicitly enable the worker and run that saved UUID. The first successful run establishes fingerprints for existing licenses; subsequent releases write only changed payloads. Stable license IDs are preserved. Test the visible profile, ordinary/nearby search and autocomplete after the first run before scheduling unattended writes.
+
+```sh
+# Public CSLB and public metadata reads only; no downloads or record writes.
+npm run data:refresh -- --check
+
+# Local downloads/SQLite only, plus public Supabase reads. No DB/index writes.
+npm run data:refresh -- --prepare
+
+# AFTER migration/snapshot review. Secrets stay on this worker, never NEXT_PUBLIC.
+CSLB_REFRESH_ENABLED=true npm run data:refresh -- --run --resume PREPARED_UUID
+
+# Later scheduled runs: detect a new release, or resume an unfinished saved run.
+CSLB_REFRESH_ENABLED=true npm run data:refresh -- --run
+
+# Explicit retry after an interruption: uses the same durable DB/local checkpoints.
+CSLB_REFRESH_ENABLED=true npm run data:refresh -- --run --resume RUN_UUID
+```
+
+The existing `--credentials-file /absolute/path/to/typesense-export.txt` option loads keys only into the process. `TYPESENSE_FETCH_ADAPTER=true` optionally enables the local Typesense SDK fetch-adapter workaround. Neither flag nor the admin/service-role keys belongs in the Vercel web app for this feature. The website needs only its existing public Supabase read configuration to display freshness; failed/unavailable metadata reads do not break search.
+
+### What completes a refresh
+
+**Absent licenses are retained, not deleted or assigned a guessed status.** The prepared manifest pins the exact missing database IDs, and resume checks that membership has not changed. After all master records have been acknowledged, bounded batches record private retention receipts, set `licenses.source_missing_since` to the first missing master-file date, and queue those documents for index readback. All last-known details, IDs, dates, and coordinates are preserved. Search cards and profiles show “Not in latest CSLB download—verify with CSLB” and a neutral “Last known” status. Status filters still match that last-known value. Profile URLs/canonicals remain unchanged; retained profiles do not show a dataset-wide refresh date as if their record had been refreshed. Both search engines hydrate the warning from Supabase, so this needs no Typesense schema change or rebuild. Autocomplete has no status assertion and still opens the annotated profile.
+
+When a license reappears, its normal source acknowledgement clears the warning—even when the payload fingerprint is identical to its last appearance—and queues verification without needlessly rewriting unchanged detail rows. SQL phase guards require exact current/retained counts and a receipt for every missing record. Final index count must equal **master licenses + retained licenses** (the audited October snapshot: 245,927 + 677 = 246,604, if source membership remains unchanged). An interrupted retention batch is safe to replay. Earlier manifests cannot be resumed under this new policy; preserve their CSVs/SQLite for audit and prepare a new reviewed snapshot instead of editing their key or fabricating a manifest.
+
+Each batch atomically updates a license and its classifications/personnel/bonds/workers-compensation records, rebuilds database fallback search text, and records changed IDs. It never globally clears detail tables. The old `data:import`/`data:finalize` commands retain their initial-import behavior and are **not** this scheduled workflow. Those commands, the Census writer and the Typesense indexer now share a maintenance lock; do not run older code versions, external imports, or other writer hosts concurrently. This is a single-host coordinator, not a distributed lease.
+
+Address changes invalidate old coordinates via the existing database trigger. The normal Census pipeline reuses unchanged address hashes/cache, processes new/changed addresses, and verifies saved source snapshots, hashes, exact coordinates/statuses and acknowledgements before indexing. PO boxes/unmatched/ambiguous records remain without coordinates. These are registered mailing locations, never confirmed service areas. Census receives only the already-documented public address fields.
+
+The index phase drains a durable changed-ID queue into the **existing** ready geographic collection. Full-document upserts clear obsolete optional fields/points. Every document-level import result is checked; each batch is read back and compared to current Supabase projections before acknowledgment. The target physical index is pinned across retries: an alias change stops the job. Final contractor count and alias checks must pass before `completed_at` advances. No collection deletion, alias swap or hosting-plan change occurs.
+
+Updates become visible per contractor as batches commit; this is not an all-records atomic release. During a failed/in-progress run, the UI says a refresh is pending validation and retains the last completed date. Index-dependent searches can temporarily lag database updates until synchronization; geographic results still revalidate coordinates during hydration. The “Data updated” date means the **last fully verified refresh**, not that CSLB verified every license that day. Separate source-file dates and the existing per-record `LastUpdate` remain visible. Before the first completed refresh, the label explicitly says “Date not yet verified.” Search URLs remain `noindex`.
+
+### Scheduling and recovery
+
+No recurring writer is enabled by committing/deploying this code. After the first reviewed end-to-end run, schedule `--run` daily on the same persistent worker (or use an approved Codex heartbeat tied to this chat). The command skips unchanged releases; unfinished jobs resume automatically from their saved UUID. Notify on a completed new release, failure, or needed decision; stay quiet on unchanged checks. A sleeping/offline desktop cannot run scheduled checks, so use an always-on worker if that guarantee is needed. Changing the worker host requires moving its protected state, not starting a second importer.
+
+On failure, preserve all state. Network retries are bounded; rerun the same UUID after resolving the cause. Source batches have exact-replay protection for lost acknowledgements; retention receipts are idempotent; geocodes use compare-and-set; full-document index upserts are idempotent. Never manually mark a job complete, clear its queue, edit a saved snapshot or advance its cursor. Inspect a lock's recorded PID and actual process before removing only a confirmed stale lock; do not remove the state directories. Changed retention membership, excessive disappearances/inconsistent releases, stale geocoding acknowledgements, or an index alias change require a reviewed reconciliation rather than an automatic retry loop. To disable new scheduled writes, stop the schedule and leave `CSLB_REFRESH_ENABLED=false`; this does not undo already-committed source updates.
+
+`npm test` covers release parsing, snapshot integrity, exact-join quarantine without data loss, malformed/unrelated data, retry/order behavior, index readback/outages, geocoding audits, worker exclusion and actual SQL transactions/permissions in isolated PGlite Postgres. Local fixture tests do not replace applying the migration on staging and reviewing a real prepared release. Running tests or deploying the web app does not apply migrations, refresh production records, or enable a recurring writer.
 
 No scraping, user accounts, reviews, claims, lead generation, or paid placement is implemented in this MVP.

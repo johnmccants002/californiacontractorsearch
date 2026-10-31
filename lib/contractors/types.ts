@@ -65,6 +65,8 @@ export interface Contractor {
   createdAt: string;
   updatedAt: string;
   sourceUpdatedAt: string;
+  /** Master-file date first absent; original details/status remain last-known. */
+  sourceMissingSince?: string;
   classifications: Classification[];
   personnel: PersonnelRecord[];
   bonds: BondRecord[];

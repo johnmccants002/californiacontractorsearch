@@ -4,11 +4,12 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 const PORTAL_URL = "https://web.cslb.ca.gov/onlineservices/dataportal/ContractorList";
 const outputDirectory = path.resolve(process.env.CSLB_DATA_DIR ?? ".data/cslb");
 
-const downloads = [
+export const downloads = [
   {
     code: "M",
     eventTarget: "ctl00$MainContent$lbMasterCSV",
@@ -75,12 +76,12 @@ function mergeCookies(current, response) {
   return [...cookies].map(([name, value]) => `${name}=${value}`).join("; ");
 }
 
-async function request(url, options = {}, cookie = "") {
+async function request(url, options = {}, cookie = "", timeoutMs = 120_000) {
   const headers = new Headers(options.headers);
   headers.set("User-Agent", "CaliforniaContractorSearch/0.1 (+official CSLB public-data importer)");
   if (cookie) headers.set("Cookie", cookie);
 
-  const response = await fetch(url, { ...options, headers, redirect: "follow" });
+  const response = await fetch(url, { ...options, headers, redirect: "follow", signal: AbortSignal.timeout(timeoutMs) });
   const nextCookie = mergeCookies(cookie, response);
   if (!response.ok) {
     throw new Error(`CSLB request failed with HTTP ${response.status} for ${url}`);
@@ -106,9 +107,13 @@ async function selectDataset(html, cookie, code) {
   return { html: await response.text(), cookie: nextCookie };
 }
 
-async function downloadDataset(dataset) {
+export async function selectedDataset(dataset) {
   const initial = await request(PORTAL_URL);
-  const selected = await selectDataset(await initial.response.text(), initial.cookie, dataset.code);
+  return selectDataset(await initial.response.text(), initial.cookie, dataset.code);
+}
+
+export async function downloadDataset(dataset, directory = outputDirectory) {
+  const selected = await selectedDataset(dataset);
   const form = hiddenFields(selected.html);
   form.set("__EVENTTARGET", dataset.eventTarget);
   form.set("__EVENTARGUMENT", "");
@@ -122,6 +127,9 @@ async function downloadDataset(dataset) {
       body: form,
     },
     selected.cookie,
+    // A 75+ MiB CSLB CSV can exceed two minutes on a healthy slow connection.
+    // Keep the complete streaming download bounded; portal requests stay at 2m.
+    600_000,
   );
 
   if (!response.body) throw new Error(`CSLB returned an empty body for ${dataset.filename}`);
@@ -130,7 +138,7 @@ async function downloadDataset(dataset) {
     throw new Error(`CSLB returned HTML instead of ${dataset.filename}; its download form may have changed`);
   }
 
-  const destination = path.join(outputDirectory, dataset.filename);
+  const destination = path.join(directory, dataset.filename);
   const temporary = `${destination}.part`;
   await rm(temporary, { force: true });
   await pipeline(Readable.fromWeb(response.body), createWriteStream(temporary));
@@ -139,6 +147,8 @@ async function downloadDataset(dataset) {
   console.log(`${dataset.filename}: ${(file.size / 1024 / 1024).toFixed(1)} MiB`);
 }
 
-await mkdir(outputDirectory, { recursive: true });
-for (const dataset of downloads) await downloadDataset(dataset);
-console.log(`CSLB files saved to ${outputDirectory}`);
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  await mkdir(outputDirectory, { recursive: true });
+  for (const dataset of downloads) await downloadDataset(dataset);
+  console.log(`CSLB files saved to ${outputDirectory}`);
+}

@@ -2,13 +2,36 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import LicensePage, { generateMetadata } from "./page";
 import { getContractorByLicense } from "@/lib/contractors/repository";
+import { getDataFreshness } from "@/lib/refresh/freshness";
 import { demoContractors } from "@/lib/contractors/demo-data";
-
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/contractors/repository", () => ({ getContractorByLicense: vi.fn() }));
-const props = { params: Promise.resolve({ licenseNumber: "1056730" }) };
-beforeEach(() => vi.resetAllMocks());
-
+vi.mock("@/lib/contractors/repository",()=>({getContractorByLicense:vi.fn()}));
+vi.mock("@/lib/refresh/freshness",()=>({getDataFreshness:vi.fn()}));
+const props={params:Promise.resolve({licenseNumber:'1056730'})};
+beforeEach(()=>{
+  vi.clearAllMocks();
+  vi.mocked(getContractorByLicense).mockResolvedValue({...demoContractors[0],dataSource:'cslb',sourceMissingSince:'2026-10-28'});
+  vi.mocked(getDataFreshness).mockResolvedValue({pending:false,updatedAt:'2026-10-30T12:00:00Z'});
+});
+it('renders retained profiles as last-known in server HTML without implying a fresh verification',async()=>{
+  const html=renderToStaticMarkup(await LicensePage(props));
+  expect(html).toContain('Not in latest CSLB download—verify with CSLB');
+  expect(html).toContain('Last-known status');expect(html).toContain('Last known: ACTIVE');
+  expect(html).not.toContain('status-active');expect(html).not.toContain('Data updated:');
+  expect(getDataFreshness).not.toHaveBeenCalled();
+  expect(html).toContain('href="https://www.cslb.ca.gov/1056730"');
+  expect(html).toContain('application/ld+json');
+  const metadata=await generateMetadata(props);
+  expect(metadata.description).toContain('last-known');
+  expect(metadata.alternates).toEqual({canonical:'/license/1056730'});
+  expect(metadata.robots).toEqual({index:true,follow:true});
+});
+it('restores normal display after reappearance and preserves existing URLs',async()=>{
+  vi.mocked(getContractorByLicense).mockResolvedValue({...demoContractors[0],dataSource:'cslb'});
+  const html=renderToStaticMarkup(await LicensePage(props));
+  expect(html).toContain('status-active');expect(html).toContain('Data updated:');
+  expect(html).not.toContain('Not in latest');expect(getDataFreshness).toHaveBeenCalledOnce();
+});
 describe("profile indexing and source presentation", () => {
   it.each(["demo", "unknown"] as const)("does not index or add business schema to %s records", async (dataSource) => {
     vi.mocked(getContractorByLicense).mockResolvedValue({ ...demoContractors[0], dataSource });
