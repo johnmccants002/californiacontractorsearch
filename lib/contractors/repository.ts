@@ -59,6 +59,7 @@ function mapContractor(row: DbRow): Contractor {
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
     sourceUpdatedAt: row.source_updated_at ? String(row.source_updated_at) : "",
+    sourceMissingSince: row.source_missing_since ? String(row.source_missing_since) : undefined,
     classifications: joins
       .map((join) => join.classifications as DbRow | null)
       .filter((item): item is DbRow => Boolean(item))

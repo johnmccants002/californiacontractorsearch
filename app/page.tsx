@@ -9,6 +9,8 @@ import { SectionHeading } from "@/components/section-heading";
 import { Arrow } from "@/components/brand";
 import { featuredClassifications, siteConfig } from "@/config/site";
 import { TradeCityLinks } from "@/components/trade-city-links";
+import { DataFreshness } from "@/components/data-freshness";
+import { getDataFreshness } from "@/lib/refresh/freshness";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +20,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function HomePage() {
   const source = await getDatasetSource();
+  const freshness = source === "cslb" ? await getDataFreshness() : undefined;
   return <>
     <section className="home-hero"><div className="page-shell">
       <div className="hero-grid"><div className="hero-content">
@@ -42,7 +45,7 @@ export default async function HomePage() {
 
       <section className="data-attribution" id="about-data" aria-labelledby="data-heading">
         <div><p className="eyebrow"><span>03</span> / KNOW THE SOURCE</p><h2 id="data-heading">A clearer view.<br />An informed decision.</h2></div>
-        <div className="data-attribution-copy"><DatasetNotice source={source} /><p>{siteConfig.disclaimer}</p>
+        <div className="data-attribution-copy"><DatasetNotice source={source} />{freshness ? <DataFreshness data={freshness} /> : null}<p>{siteConfig.disclaimer}</p>
           <a href={siteConfig.cslbLookupUrl} target="_blank" rel="noopener noreferrer" className="text-link">Verify with the official CSLB <Arrow diagonal /><span className="sr-only"> (opens in a new tab)</span></a>
         </div>
       </section>

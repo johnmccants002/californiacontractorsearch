@@ -7,6 +7,8 @@ import { getContractorByLicense } from "@/lib/contractors/repository";
 import { displayClassificationCode } from "@/lib/search/normalize";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { featuredClassifications, getCslbLicenseUrl } from "@/config/site";
+import { DataFreshness } from "@/components/data-freshness";
+import { getDataFreshness } from "@/lib/refresh/freshness";
 
 type PageProps = { params: Promise<{ licenseNumber: string }> };
 
@@ -17,7 +19,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const title = `${contractor.businessName} | California Contractor License #${contractor.licenseNumber}`;
   return {
     title: { absolute: title },
-    description: `${contractor.businessName} is listed in ${contractor.city}, California with contractor license #${contractor.licenseNumber}. View status, classifications, personnel, bond, and workers' compensation details.`,
+    description: contractor.sourceMissingSince ? `${contractor.businessName}, California license #${contractor.licenseNumber}: last-known records, absent from the latest imported CSLB master file. Verify current details with CSLB.` : `${contractor.businessName} is listed in ${contractor.city}, California with contractor license #${contractor.licenseNumber}. View status, classifications, personnel, bond, and workers' compensation details.`,
     alternates: { canonical: `/license/${contractor.licenseNumber}` },
     robots: { index: contractor.dataSource === "cslb", follow: true },
     openGraph: { title, description: `California contractor license profile for ${contractor.businessName}.`, type: "profile" },
@@ -28,11 +30,15 @@ export default async function LicensePage({ params }: PageProps) {
   const { licenseNumber } = await params;
   const contractor = await getContractorByLicense(licenseNumber);
   if (!contractor) notFound();
+  const retained = contractor.dataSource === "cslb" && Boolean(contractor.sourceMissingSince);
+  // A dataset-wide refresh must not imply that an absent profile was refreshed.
+  const freshness = contractor.dataSource === "cslb" && !retained ? await getDataFreshness() : undefined;
 
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": ["Organization", "LocalBusiness"],
     name: contractor.businessName,
+    ...(retained ? { description: "Last-known imported CSLB record; absent from the latest master download. Verify current details with CSLB." } : {}),
     identifier: {
       "@type": "PropertyValue",
       name: "California contractor license number",
@@ -63,11 +69,12 @@ export default async function LicensePage({ params }: PageProps) {
               <p className="eyebrow">California Contractor License #{contractor.licenseNumber}</p>
               <h1>{contractor.businessName}</h1>
             </div>
-            <StatusBadge status={contractor.licenseStatus} />
+            <StatusBadge status={contractor.licenseStatus} lastKnown={retained} />
           </div>
           <LicenseVerification contractor={contractor} />
+          {freshness ? <DataFreshness data={freshness} /> : null}
           <p className="profile-summary">
-            {contractor.dataSource === "cslb" ? `${contractor.businessName} is listed in the imported CSLB records with a business address in ${contractor.city}, ${contractor.state}. License #${contractor.licenseNumber} is recorded as ${contractor.licenseStatus} in this dataset.` : `This ${contractor.dataSource === "demo" ? "demonstration" : "unconfirmed"} profile shows ${contractor.businessName} and license number ${contractor.licenseNumber}. It is not verification of a real contractor's license.`}
+            {retained ? `${contractor.businessName} was listed with a business address in ${contractor.city}, ${contractor.state}. License #${contractor.licenseNumber} had a last-known status of ${contractor.licenseStatus}. The information below is retained for reference, not confirmation of current status or coverage.` : contractor.dataSource === "cslb" ? `${contractor.businessName} is listed in the imported CSLB records with a business address in ${contractor.city}, ${contractor.state}. License #${contractor.licenseNumber} is recorded as ${contractor.licenseStatus} in this dataset.` : `This ${contractor.dataSource === "demo" ? "demonstration" : "unconfirmed"} profile shows ${contractor.businessName} and license number ${contractor.licenseNumber}. It is not verification of a real contractor's license.`}
           </p>
         </header>
 
@@ -75,7 +82,7 @@ export default async function LicensePage({ params }: PageProps) {
           <ProfileSection number="01" title="License Information">
             <dl className="fact-list">
               <Fact label="License number" value={contractor.licenseNumber} />
-              <Fact label="Status" value={contractor.licenseStatus} />
+              <Fact label={retained ? "Last-known status" : "Status"} value={contractor.licenseStatus} />
               <Fact label="Issue date" value={formatDate(contractor.issueDate)} />
               <Fact label="Expiration date" value={formatDate(contractor.expirationDate)} />
               <Fact label="Entity type" value={contractor.entityType} />

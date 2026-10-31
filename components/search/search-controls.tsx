@@ -7,6 +7,7 @@ import { Arrow, SearchIcon } from "@/components/brand";
 import { AutocompleteInput } from "./autocomplete-input";
 import { typesenseEnabled } from "@/lib/typesense/config";
 import { geoEnabled, hasGeoInput } from "@/lib/search/geo";
+import { LocationControls } from "./location-controls";
 
 const fieldClass = "field-input";
 
@@ -20,7 +21,7 @@ export function SearchControls({ state, catalog, error, geoInput = {} }: { state
     { key: "county" as const, label: f.county ? `County: ${f.county}` : "" },
     { key: "zip" as const, label: f.zip ? `ZIP: ${f.zip}` : "" },
     { key: "status" as const, label: f.status ? `Status: ${f.status.toLowerCase()}` : "" },
-    { key: "geo" as const, label: f.geo ? `${f.geo.radiusMiles ? `Within ${f.geo.radiusMiles} miles` : "Located records"} of ${f.geo.latitude}, ${f.geo.longitude}` : "" },
+    { key: "geo" as const, label: f.geo ? `${f.geo.radiusMiles ? `Within ${f.geo.radiusMiles} miles` : "Located records"} of ${f.near || `${f.geo.latitude}, ${f.geo.longitude}`}` : f.near ? `Near: ${f.near}` : "" },
     { key: "sort" as const, label: f.sort === "name" ? "Sort: name A–Z" : f.sort === "distance" ? "Sort: nearest registered address" : "" },
   ].filter((chip) => chip.label);
 
@@ -57,16 +58,7 @@ export function SearchControls({ state, catalog, error, geoInput = {} }: { state
           </label>
           <button className="button-secondary self-end">Apply filters</button>
         </FilterDisclosure>
-        {showGeo ? <details className="geo-controls" open={Boolean(f.geo) || hasGeoInput(geoInput)}>
-          <summary>Search by distance from a location</summary>
-          <p className="filter-help">Approximate straight-line distance to Census-matched registered mailing addresses—not confirmed service areas. Records without accepted coordinates are excluded.</p>
-          <div className="geo-filter-fields">
-            <label className="filter-label">Center latitude<input name="lat" type="number" min="-90" max="90" step="any" defaultValue={f.geo?.latitude ?? geoInput.lat ?? ""} placeholder="38.58" className={fieldClass} /></label>
-            <label className="filter-label">Center longitude<input name="lng" type="number" min="-180" max="180" step="any" defaultValue={f.geo?.longitude ?? geoInput.lng ?? ""} placeholder="-121.49" className={fieldClass} /></label>
-            <label className="filter-label">Radius (miles)<input name="radius" type="number" min="0.1" max="250" step="any" defaultValue={f.geo?.radiusMiles ?? geoInput.radius ?? ""} placeholder="Optional · up to 250" className={fieldClass} /></label>
-            <button className="button-secondary self-end">Apply location</button>
-          </div>
-        </details> : null}
+        {showGeo ? <LocationControls filters={f} input={geoInput} /> : null}
         {error ? <p role="alert" className="form-error">{error}</p> : null}
       </form>
       {chips.length ? (
@@ -78,7 +70,7 @@ export function SearchControls({ state, catalog, error, geoInput = {} }: { state
           <Link href={clearFiltersHref(state)} className="filter-clear">Clear filters</Link>
         </nav>
       ) : null}
-      <p className="filter-help">City, county, and ZIP refer to the registered business address, not service area. Filters apply across all matching records.</p>
+      <p className="filter-help">City, county, and ZIP refer to the registered business address, not service area. Filters apply across all matching records. Status filters use the last-known status for records marked absent from the latest CSLB download.</p>
     </div>
   );
 }

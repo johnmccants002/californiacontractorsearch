@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { getAllContractors, getContractorByLicense, getContractorsForClassificationFromDatabase, getDatasetSource } from "./repository";
+import { getAllContractors, getContractorByLicense, getContractorsByIds, getContractorsForClassificationFromDatabase, getDatasetSource } from "./repository";
 import { recordSource, sourceDate } from "./provenance";
 
 vi.mock("server-only", () => ({}));
@@ -29,6 +29,16 @@ describe("record provenance", () => {
 });
 
 describe("source-aware repository", () => {
+  it("hydrates missing-source warnings for both profile and search without changing status", async () => {
+    const row={id:1,license_number:'1082303',business_name:'1 DEMOLITION',source_status:'CLEAR',license_status:'ACTIVE',source_missing_since:'2026-10-28',source_updated_at:'2026-10-03'};
+    vi.mocked(createServerSupabaseClient).mockReturnValue(database(row));
+    const profile=await getContractorByLicense('1082303');
+    expect(profile).toMatchObject({id:1,licenseStatus:'ACTIVE',sourceMissingSince:'2026-10-28',sourceUpdatedAt:'2026-10-03'});
+    vi.mocked(createServerSupabaseClient).mockReturnValue(database([row]));
+    expect(await getContractorsByIds([1])).toEqual([profile]);
+    vi.mocked(createServerSupabaseClient).mockReturnValue(database({...row,source_missing_since:null}));
+    expect((await getContractorByLicense('1082303'))?.sourceMissingSince).toBeUndefined();
+  });
   it("hydrates bounded trade IDs in order without dropping other classifications", async () => {
     const requests: URL[] = [];
     const client = createClient("https://records.test", "test-public-key", { auth: { persistSession: false }, global: {

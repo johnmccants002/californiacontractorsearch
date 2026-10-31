@@ -24,7 +24,7 @@ export function AutocompleteInput({ id, defaultValue = "", enabled = false }: { 
         const params = new URLSearchParams({ q: query });
         if (input.current?.form) {
           const form = new FormData(input.current.form);
-          for (const field of ["classification", "city", "county", "zip", "status", "lat", "lng", "radius", "sort"]) {
+          for (const field of ["classification", "city", "county", "zip", "status", "near", "lat", "lng", "radius", "sort"]) {
             const value = form.get(field);
             if (typeof value === "string" && value.trim()) params.set(field, value);
           }

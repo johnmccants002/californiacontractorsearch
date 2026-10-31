@@ -7,12 +7,14 @@ import { Arrow } from "@/components/brand";
 import { HighlightedName } from "./highlighted-name";
 
 export function ResultCard({ contractor, matchedBy, highlightTokens, distanceMiles }: { contractor: Contractor; matchedBy?: string[]; highlightTokens?: string[]; distanceMiles?: number }) {
+  const retained = contractor.dataSource === "cslb" && Boolean(contractor.sourceMissingSince);
   return <Link href={`/license/${contractor.licenseNumber}`} className="record-card">
     <div className="record-rail"><span>LICENSE NO.</span><strong>#{contractor.licenseNumber}</strong><span className="record-rail-bottom">CA / CONTRACTOR<br className="hidden sm:block" /> LICENSE RECORD</span></div>
     <div className="record-main">
       <div className="record-title-row"><div><h2><HighlightedName text={contractor.businessName} tokens={highlightTokens} /></h2>
         {contractor.dataSource !== "cslb" ? <p className="record-warning">{contractor.dataSource === "demo" ? "Fictional demonstration record" : "Record source unconfirmed"}</p> : null}
-      </div><StatusBadge status={contractor.licenseStatus} /></div>
+        {retained ? <p className="record-warning">Not in latest CSLB download—verify with CSLB. Details below are last known.</p> : null}
+      </div><StatusBadge status={contractor.licenseStatus} lastKnown={retained} /></div>
       <dl className="record-facts">
         <div><dt>Classification</dt><dd>{contractor.classifications.map((item) => `${displayClassificationCode(item.code)} · ${item.name.replace(" Contractor", "")}`).join(", ") || "Not available"}</dd></div>
         <div><dt>Registered location</dt><dd>{contractor.city}, California {contractor.zip}</dd></div>

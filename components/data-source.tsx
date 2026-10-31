@@ -18,8 +18,14 @@ export function DatasetNotice({ source }: { source: DatasetSource }) {
 export function LicenseVerification({ contractor }: { contractor: Contractor }) {
   const date = sourceDate(contractor.sourceUpdatedAt);
   const imported = contractor.dataSource === "cslb";
+  const retained = imported && Boolean(contractor.sourceMissingSince);
   return (
-    <section aria-label="Record source and verification" className={`verification-panel${imported ? "" : " verification-warning"}`}>
+    <section aria-label="Record source and verification" className={`verification-panel${!imported || retained ? " verification-warning" : ""}`}>
+      {retained ? <div className="mb-4">
+        <p className="verification-title">Not in latest CSLB download—verify with CSLB</p>
+        <p className="verification-note mt-2">This profile keeps the last-known information. Absence from a download does not establish whether this license is active, expired, suspended, or revoked.</p>
+        <p className="verification-note mt-1">First absent from master file dated <time dateTime={contractor.sourceMissingSince}>{formatDate(contractor.sourceMissingSince)}</time>. Confirm current status and details using the official link below.</p>
+      </div> : null}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="verification-title">

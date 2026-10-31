@@ -26,6 +26,12 @@ beforeEach(() => {
 });
 
 describe("source-validated search adapter", () => {
+  it("retains searchable absent profiles and hydrates their last-known warning from Supabase",async()=>{
+    vi.mocked(getContractorsByIds).mockResolvedValue([{...contractor,sourceMissingSince:'2026-10-28'}]);
+    const result=await searchTypesenseContractors('ABC',1,10,{},classifications);
+    expect(result.results[0].contractor).toMatchObject({id:contractor.id,licenseStatus:contractor.licenseStatus,sourceMissingSince:'2026-10-28'});
+    expect(result.total).toBe(1);
+  });
   it("refuses incomplete and incompatible indexes", async () => {
     for (const document of [{ ready: false, schema_version: SCHEMA_VERSION }, { ready: true, schema_version: -1 }]) {
       remote.mockResolvedValue({ hits: [{ document }] });
@@ -74,5 +80,14 @@ describe("source-validated search adapter", () => {
       vi.mocked(getContractorsByIds).mockResolvedValue([{ ...contractor, registeredLocation: location }]);
       await expect(searchTypesenseContractors("ABC", 1, 10, input, classifications)).rejects.toThrow("locations are out of sync");
     }
+  });
+  it("resolves city and ZIP centers for search and autocomplete before calling the index", async () => {
+    vi.stubEnv("CENSUS_GEOCODING_ENABLED", "true");
+    remote.mockResolvedValue({ hits: [{ document: { ready: true, schema_version: GEO_SCHEMA_VERSION } }] });
+    await searchTypesenseContractors("ABC", 1, 5, { near: "95814", radius: "10" }, classifications);
+    expect(searchIndex).toHaveBeenCalledWith(expect.any(Function), "ABC", 1, 5, expect.objectContaining({ near: "95814", lat: "38.580568", lng: "-121.49559", radius: "10", sort: "distance" }), classifications);
+    vi.mocked(searchIndex).mockClear();
+    await expect(searchTypesenseContractors("ABC", 1, 5, { near: "Not a city" }, classifications)).rejects.toThrow("couldn't find");
+    expect(searchIndex).not.toHaveBeenCalled();
   });
 });
