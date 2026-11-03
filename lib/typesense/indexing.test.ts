@@ -3,7 +3,7 @@ import { assertCompleteIndex, assertImportSuccess, incrementalRemovals, parseIds
 import { typesenseConfig, typesenseEnabled } from "./config";
 describe("safe index publication and sync", () => {
   it("retries transient source checks without advancing checkpoints", async () => {
-    const read = vi.fn().mockResolvedValueOnce({ error: { code: "57014" }, status: 500 }).mockRejectedValueOnce(new Error("private request"))
+    const read = vi.fn().mockResolvedValueOnce({ error: {}, status: 503 }).mockRejectedValueOnce(new Error("private request"))
       .mockResolvedValue({ error: null, status: 200, data: [1] });
     const sleep = vi.fn().mockResolvedValue(undefined);
     expect(await readIndexSource(read, "licenses count", sleep)).toMatchObject({ data: [1] });
@@ -13,10 +13,15 @@ describe("safe index publication and sync", () => {
   it("bounds retries and suppresses source error payloads", async () => {
     const read = vi.fn().mockResolvedValue({ error: { code: "57014", message: "secret" }, status: 500 });
     await expect(readIndexSource(read, "licenses count", async () => {})).rejects.toThrow("licenses count failed (HTTP 500, code 57014)");
-    expect(read).toHaveBeenCalledTimes(3);
+    expect(read).toHaveBeenCalledTimes(1);
     const denied = vi.fn().mockResolvedValue({ error: { code: "42501", message: "secret" }, status: 403 });
     await expect(readIndexSource(denied, "licenses count", async () => {})).rejects.toThrow("code 42501");
     expect(denied).toHaveBeenCalledTimes(1);
+  });
+  it("bounds repeated transport errors to three attempts",async()=>{
+    const read=vi.fn().mockRejectedValue(new Error("secret transport"));
+    await expect(readIndexSource(read,"source",async()=>{})).rejects.toThrow("network");
+    expect(read).toHaveBeenCalledTimes(3);
   });
   it("requires every document acknowledgement, even on HTTP 200", () => {
     expect(() => assertImportSuccess([{ success: true }, { success: false, code: 400, error: "private payload" }], 2)).toThrow("1 rejected");

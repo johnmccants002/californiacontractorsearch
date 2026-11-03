@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rename, access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import { Client } from "typesense";
 import { downloads, downloadDataset } from "./download-cslb-data.mjs";
@@ -16,12 +17,13 @@ import { syncRefreshIndex } from "../lib/refresh/index-sync";
 import { readIndexSource } from "../lib/typesense/indexing";
 import { typesenseConfig } from "../lib/typesense/config";
 import { GEO_SCHEMA_VERSION, type IndexMarker } from "../lib/typesense/schema";
+import { prepareRetainedBaseline, auditRetained, auditCoordinates, auditIndex } from "../lib/refresh/audit";
 
 type Manifest = { id:string; source:string; dates:ReleaseDates; hashes:Record<string,string>; key:string; snapshotHash:string; counts:Record<Table,number>; membership:MembershipReview; retainedIds?:number[]; geoJob?:string; indexVersion?:string };
-const args = process.argv.slice(2);
-const value = (flag:string) => args.includes(flag) ? args[args.indexOf(flag)+1] : undefined;
+export type RefreshOutcome = {kind:"unchanged";sourceDates:ReleaseDates} | {kind:"complete";runId:string;contractors:number;retained:number;completedAt:string;sourceDates:ReleaseDates;retainedLicense?:string};
 async function exists(path:string) { try { await access(path); return true; } catch { return false; } }
-async function main() {
+export async function refreshCslb(args:string[], onRun?:(id:string)=>Promise<void>, allowUntrackedResume=true):Promise<RefreshOutcome|undefined> {
+  const value = (flag:string) => args.includes(flag) ? args[args.indexOf(flag)+1] : undefined;
   if (args.includes("--help")) {
     console.log("Read-only release dates: npm run data:refresh -- --check\nDownload, validate, and plan only: npm run data:refresh -- --prepare\nApply new release or resume: npm run data:refresh -- --run [--resume UUID] [--credentials-file PATH]\nRequires the reviewed refresh migration, CSLB_REFRESH_ENABLED=true, and one persistent Node worker/volume. Not a Vercel request. Missing licenses require review; no automatic deletion. State: .data/refresh (preserve it and .data/census)."); return;
   }
@@ -62,6 +64,7 @@ async function main() {
     let id=value("--resume");
     if(modes[0]==="--run" && !id) {
       const active=await readIndexSource(()=>db.from("cslb_refresh_runs").select("id").neq("phase","complete").limit(1),"active refresh");
+      if(active.data?.length && !allowUntrackedResume) throw new Error("An untracked unfinished refresh needs explicit review before scheduled recovery.");
       id=active.data?.[0]?.id;
     }
     if(id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) throw new Error("Invalid refresh UUID.");
@@ -82,7 +85,7 @@ async function main() {
       const dates=await inspectRelease();
       if(latest.data?.[0]) {
         assertNotOlder(dates,latest.data[0].source_dates);
-        if(modes[0]==="--run" && sameRelease(dates,latest.data[0].source_dates)) { console.log(JSON.stringify({unchanged:true,sourceDates:dates,databaseWrites:0})); return; }
+        if(modes[0]==="--run" && sameRelease(dates,latest.data[0].source_dates)) { console.log(JSON.stringify({unchanged:true,sourceDates:dates,databaseWrites:0})); return {kind:"unchanged",sourceDates:dates}; }
       }
       await mkdir(directory,{recursive:true,mode:0o700});
       const hashes:Record<string,string>={};
@@ -124,6 +127,8 @@ async function main() {
     if(!(await client.health.retrieve()).ok || !marker.ready || marker.schema_version!==GEO_SCHEMA_VERSION) throw new Error("A healthy, ready schema-v2 geographic index is required before source writes.");
     const saved=await readIndexSource(()=>db.from("cslb_refresh_runs").select("*").eq("id",id).maybeSingle(),"refresh checkpoint");
     if(saved.data && (saved.data.release_key!==manifest.key || saved.data.expected!==manifest.counts.licenses || saved.data.index_version!==manifest.indexVersion || saved.data.retained_expected!==retainedIds.length)) throw new Error("Database checkpoint does not match the saved snapshot/index/retention plan.");
+    const baseline=await prepareRetainedBaseline(publicDb,retainedIds,directory,!saved.data);
+    await onRun?.(id);
     if(!saved.data) await readIndexSource(()=>db.from("cslb_refresh_runs").insert({id,release_key:manifest.key,index_version:manifest.indexVersion,source_dates:manifest.dates,source_counts:manifest.counts,expected:manifest.counts.licenses,retained_expected:retainedIds.length}),"start refresh");
     await runRefresh({
       read:async()=>(await readIndexSource(()=>db.from("cslb_refresh_runs").select("id,phase,cursor,processed,expected").eq("id",id).single(),"refresh checkpoint")).data as RefreshRun,
@@ -132,10 +137,22 @@ async function main() {
       reconcile:()=>reconcileRetained(retainedIds,async licenseIds=>(await readIndexSource(()=>db.rpc("retain_missing_cslb_batch",{refresh_id:id,license_ids:licenseIds}).abortSignal(AbortSignal.timeout(35000)),"retained source batch")).data),
       advance:async(phase:RefreshPhase)=>{await readIndexSource(()=>db.rpc("advance_cslb_refresh",{refresh_id:id,next_phase:phase}).abortSignal(AbortSignal.timeout(35000)),"refresh phase");},
       geocode:()=>refreshGeocoding(db,source,manifest.geoJob,async job=>{manifest.geoJob=job;await save();},id!),
-      index:()=>syncRefreshIndex(db,id!,expectedIndexCount,manifest.indexVersion!),
+      index:async()=>{
+        await syncRefreshIndex(db,id!,expectedIndexCount,manifest.indexVersion!);
+        if(!manifest.geoJob) throw new Error("Geocoding audit job is missing.");
+        const retained=await auditRetained(publicDb,baseline,manifest.dates["license-master.csv"]);
+        const coordinates=await auditCoordinates(publicDb,manifest.geoJob,source,expectedIndexCount);
+        const index=await auditIndex(client,config.collection,manifest.indexVersion!,coordinates.scanned,coordinates.accepted);
+        await writeFile(`${directory}/completion-audit.json`,JSON.stringify({checkedAt:new Date().toISOString(),retained,coordinates,index},null,2),{mode:0o600});
+      },
       log:state=>console.log(JSON.stringify({phase:state.phase,processed:state.processed,expected:state.expected})),
     });
+    const completed=await readIndexSource(()=>publicDb.from("cslb_refresh_runs").select("phase,completed_at").eq("id",id).single(),"completed freshness");
+    if(completed.data?.phase!=="complete" || !completed.data.completed_at) throw new Error("Refresh has no completed acknowledgment.");
     console.log(JSON.stringify({completed:id,counts:manifest.counts,retainedLicenses:retainedIds.length,expectedIndexCount,sourceDates:manifest.dates,sourceRecordsDeleted:0,aliasChanged:false}));
+    return {kind:"complete",runId:id,contractors:expectedIndexCount,retained:retainedIds.length,completedAt:completed.data.completed_at,sourceDates:manifest.dates,retainedLicense:baseline.records[0]?.licenseNumber};
   } finally { snapshot?.close();await releaseLock(); }
 }
-main().catch(error=>{console.error(error instanceof Error && error.name==="TimeoutError" ? "A source request timed out; partial files/checkpoints retained and no incomplete download accepted." : error instanceof Error && error.constructor===Error ? error.message : "Refresh stopped; checkpoints retained. Raw errors suppressed to protect credentials and records.");process.exitCode=1;});
+if (process.argv[1] && import.meta.url===pathToFileURL(resolve(process.argv[1])).href) {
+  refreshCslb(process.argv.slice(2)).catch(error=>{console.error(error instanceof Error && error.name==="TimeoutError" ? "A source request timed out; partial files/checkpoints retained and no incomplete download accepted." : error instanceof Error && error.constructor===Error ? error.message : "Refresh stopped; checkpoints retained. Raw errors suppressed to protect credentials and records.");process.exitCode=1;});
+}

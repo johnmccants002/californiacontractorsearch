@@ -21,6 +21,9 @@ beforeAll(async()=>{
   // Emulate Supabase's pre-existing service grants, before testing the new grants.
   await db.exec('GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;');
   await db.exec(await readFile(new URL('../../supabase/migrations/20261031072412_retain_missing_cslb_records.sql',import.meta.url),'utf8'));
+  const aclBefore=(await db.query("select proacl::text from pg_proc where oid='public.advance_cslb_refresh(uuid,text)'::regprocedure")).rows;
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261031175342_optimize_cslb_refresh_validation.sql',import.meta.url),'utf8'));
+  expect((await db.query("select proacl::text from pg_proc where oid='public.advance_cslb_refresh(uuid,text)'::regprocedure")).rows).toEqual(aclBefore);
 },30000);
 beforeEach(async()=>{
   await db.exec(`RESET ROLE;TRUNCATE public.cslb_refresh_runs,public.licenses CASCADE;
@@ -97,6 +100,7 @@ describe('missing-master retention in isolated Postgres',()=>{
       await db.exec(`SET ROLE ${role}`);
       expect((await db.query('select source_missing_since from public.licenses')).rows).toHaveLength(2);
       await expect(retain()).rejects.toThrow('permission denied');
+      await expect(advance('geocoding')).rejects.toThrow('permission denied');
       await expect(db.query('select * from public.cslb_refresh_retained')).rejects.toThrow('permission denied');
       await expect(db.query('select retained_expected from public.cslb_refresh_runs')).rejects.toThrow('permission denied');
       await expect(db.exec("update public.licenses set source_missing_since='2026-10-28'")).rejects.toThrow('permission denied');
@@ -104,5 +108,38 @@ describe('missing-master retention in isolated Postgres',()=>{
     }
     expect((await db.query("select relrowsecurity from pg_class where oid='public.cslb_refresh_retained'::regclass")).rows).toEqual([{relrowsecurity:true}]);
     expect((await db.query("select bool_and(not prosecdef and proconfig @> array['search_path=pg_catalog','statement_timeout=30s']) as safe from pg_proc where proname in ('retain_missing_cslb_batch','clear_cslb_missing_on_seen','advance_cslb_refresh')")).rows).toEqual([{safe:true}]);
+  });
+  it.each([
+    {name:'current record has an absence warning',sql:"update public.licenses set source_missing_since='2026-10-28' where id=10",error:'Unreconciled'},
+    {name:'current record has a retention receipt',sql:`insert into public.cslb_refresh_retained values('${first}',10);update public.cslb_refresh_runs set retained_expected=2`,error:'Unreconciled'},
+    {name:'retained record lost its source identity',sql:"update public.licenses set source_status=' ' where id=20",error:'Retained record source changed'},
+    {name:'source membership count drifted',sql:'delete from public.cslb_refresh_fingerprints where license_id=10',error:'Source membership count mismatch'},
+    {name:'missing receipt count was falsely lowered',sql:'delete from public.cslb_refresh_retained;update public.cslb_refresh_runs set retained_expected=0',error:'Unreconciled'},
+  ])('optimized audit still blocks $name',async({sql,error})=>{
+    await apply();await retain();await db.exec(sql);
+    await db.exec('SET ROLE service_role');
+    await expect(advance('geocoding')).rejects.toThrow(error);
+    expect((await db.query('select phase,completed_at from public.cslb_refresh_runs')).rows).toEqual([{phase:'applying',completed_at:null}]);
+  });
+  it('checks the full source set and rejects an unplanned record after valid members',async()=>{
+    await apply();await retain();
+    await db.exec(`insert into public.licenses(id,license_number,business_name,license_status,source_status)
+      select n,n::text,'Synthetic fixture','ACTIVE','Clear' from generate_series(10000,11999) n;
+      insert into public.cslb_refresh_fingerprints(license_number,license_id,payload_hash,last_seen_run)
+      select n::text,n,repeat('a',32),'${first}'::uuid from generate_series(10000,11999) n;
+      update public.cslb_refresh_runs set expected=2001,processed=2001;`);
+    await db.exec('SET ROLE service_role');await advance('geocoding');
+    await db.exec('RESET ROLE');
+    await db.exec("insert into public.licenses(id,license_number,business_name,license_status,source_status) values(30000,'30000','Unplanned fixture','ACTIVE','Clear')");
+    await db.exec('SET ROLE service_role');
+    await expect(advance('indexing')).rejects.toThrow('Unreconciled');
+  });
+  it('changes only the full-set query shape, preserving every existing guard',async()=>{
+    const previous=await readFile(new URL('../../supabase/migrations/20261031072412_retain_missing_cslb_records.sql',import.meta.url),'utf8');
+    const next=await readFile(new URL('../../supabase/migrations/20261031175342_optimize_cslb_refresh_validation.sql',import.meta.url),'utf8');
+    const body=(sql:string)=>sql.slice(sql.indexOf('create or replace function public.advance_cslb_refresh')).split('$$;')[0];
+    expect(body(next)).toBe(body(previous)
+      .replace('if exists (\n    select 1 from public.licenses l','if (\n    select count(*) from public.licenses l')
+      .replace(") then raise exception 'Unreconciled source records", ") > 0 then raise exception 'Unreconciled source records"));
   });
 });

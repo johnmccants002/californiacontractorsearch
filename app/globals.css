@@ -1,5 +1,30 @@
 @import "tailwindcss";
 
+/* Business accounts share the directory's typography and quiet, bordered panels. */
+.claim-shell { max-width: 1100px; }
+.claim-shell > p, .claim-card > p, .claim-help p, .claim-public p { line-height: 1.7; margin-block: 1rem; }
+.claim-shell h1 { font-size: clamp(2.8rem, 6vw, 5rem); line-height: 1.05; margin-block: 1rem; }
+.claim-card, .claim-help { border: 1px solid var(--line, #c7c5b9); padding: clamp(1.25rem, 3vw, 2rem); margin-block: 2rem; }
+.claim-card h2, .claim-help h2 { font-size: 1.6rem; margin-bottom: 1rem; }
+.claim-narrow { max-width: 680px; }
+.claim-form fieldset { border: 0; padding: 0; min-width: 0; display: grid; gap: 1.25rem; }
+.claim-form label { display: grid; gap: .5rem; line-height: 1.5; }
+.claim-form .field-input { width: 100%; min-width: 0; }
+.claim-form textarea { resize: vertical; }
+.claim-form .claim-check { display: flex; align-items: flex-start; gap: .75rem; }
+.claim-check input { flex: 0 0 auto; margin-top: .3rem; width: 1.1rem; height: 1.1rem; accent-color: var(--accent, #c45935); }
+.claim-form button { justify-self: start; }
+.claim-form button:disabled { opacity: .6; cursor: wait; }
+.claim-feedback, .claim-form .form-error { margin-top: 1rem; overflow-wrap: anywhere; }
+.claim-actions { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-block: 1.5rem; }
+.claim-actions a[aria-current="page"] { font-weight: 700; text-decoration: underline; }
+.claim-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.claim-audit { font-size: .75rem; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; }
+.claim-secret { display: block; overflow-wrap: anywhere; padding: 1rem; background: #fff; margin-block: 1rem; }
+.claim-copy { white-space: pre-wrap; overflow-wrap: anywhere; }
+.claim-public .claim-label { display: inline-block; border: 1px solid currentColor; padding: .25rem .75rem; font-size: .85rem; }
+@media (max-width: 600px) { .claim-fields { grid-template-columns: 1fr; } .claim-card { padding: 1rem; } }
+
 :root {
   --paper: #f2efe6;
   --iron: #1d292d;
