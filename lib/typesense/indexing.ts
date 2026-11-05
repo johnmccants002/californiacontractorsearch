@@ -13,7 +13,8 @@ export async function readIndexSource<T extends { error: { code?: string } | nul
     if (response) {
       const code = /^[A-Z0-9]{1,12}$/.test(response.error?.code ?? "") ? response.error!.code : "unknown";
       diagnostic = `HTTP ${response.status}, code ${code}`;
-      if (response.status > 0 && response.status !== 408 && response.status !== 429 && response.status < 500 && code !== "57014") break;
+      // SQL timeouts/permission/schema failures need review, not transport retries.
+      if (code === "57014" || (code !== "unknown" && code !== "PGRST003") || (response.status > 0 && response.status !== 408 && response.status !== 429 && response.status < 500)) break;
     }
     if (attempt < 2) await sleep(1000 * 2 ** attempt);
   }

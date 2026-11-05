@@ -8,7 +8,7 @@ The repository ships with 32 fictional fallback contractors for offline developm
 
 ## Project status
 
-The initial application MVP and statewide CSLB import pipeline are complete. The hosted project currently contains 243,757 licenses from the CSLB release updated October 3, 2026.
+The initial application MVP and statewide CSLB import pipeline are complete. The October 31, 2026 audited refresh contained 246,604 contractors: 245,927 licenses in the master file plus 677 retained last-known records. It used CSLB files dated October 28–30 and verified 167,706 accepted registered-address locations. These are historical audit counts, not live totals.
 
 ## Stack
 
@@ -388,4 +388,107 @@ On failure, preserve all state. Network retries are bounded; rerun the same UUID
 
 `npm test` covers release parsing, snapshot integrity, exact-join quarantine without data loss, malformed/unrelated data, retry/order behavior, index readback/outages, geocoding audits, worker exclusion and actual SQL transactions/permissions in isolated PGlite Postgres. Local fixture tests do not replace applying the migration on staging and reviewing a real prepared release. Running tests or deploying the web app does not apply migrations, refresh production records, or enable a recurring writer.
 
-No scraping, user accounts, reviews, claims, lead generation, or paid placement is implemented in this MVP.
+### Local daily freshness automation
+
+The scheduled entry point is `npm run data:scheduled -- --run`. It wraps the existing importer; it is not a Vercel endpoint and does not install a schedule itself. Use one **local Codex heartbeat in this chat**, proposed daily at **4 a.m. America/Los_Angeles**, with this checkout and its protected persistent `.data` directory. The computer must be awake and Codex running. Missed executions while offline are not guaranteed to catch up. A separate Healthchecks.io check can email if the expected successful ping never arrives, even when this computer is offline. Do not use a second writer host, ephemeral worktree, or concurrent importer.
+
+Before activation:
+
+1. Keep `CSLB_SCHEDULE_ENABLED=false` and `CSLB_REFRESH_ENABLED=false`. Preserve and review the tested `20261031175342_optimize_cslb_refresh_validation.sql` migration in Git; it was already applied to the hosted project. Do not reapply it or assume a code deploy applies database migrations.
+2. Configure the ignored **`.env.refresh.local`** file. The scheduled CLI loads it before the normal Next environment; the website does not load this file. Keep the service-role and Typesense admin keys on this worker. The existing `.env.local`/`--credentials-file` support remains available. Do not commit or print any secret files.
+3. For Gmail email alerts, provide `GMAIL_USER`, `GMAIL_APP_PASSWORD` (a Google app password, not your normal password), and `CSLB_ALERT_TO` (one destination). The sender is the authenticated Gmail account; no Resend account or custom domain is required. Google app passwords require two-step verification and can be revoked by account/password changes. Keep these in the ignored `.env.refresh.local`, never `NEXT_PUBLIC_` or Vercel website settings. Gmail SMTP uses certificate-verified TLS on port 465 with bounded timeouts and no protocol logging. Gmail account limits/security policies still apply. Alternatively use `RESEND_API_KEY` (sending-only) and `CSLB_ALERT_FROM` (verified sender). Gmail is selected when either Gmail setting is present; optional `CSLB_EMAIL_PROVIDER=gmail|resend` selects explicitly. Partial configuration fails; providers never automatically fail over.
+4. Create a Healthchecks.io check, configure its email recipient, and set `CSLB_HEALTHCHECK_URL` to its secret `https://hc-ping.com/UUID` ping URL. Match the daily 4 a.m. **America/Los_Angeles** schedule, and initially allow a **6-hour grace period** for processing; adjust using measured runtimes. This is an alert threshold, not a promise that imports finish in six hours. Test a missing/failure ping and confirm its email actually arrives. A local heartbeat alone cannot detect its own host being offline.
+5. Run `npm run data:scheduled -- --preflight`. This reads local configuration/checkpoints only; it sends no email, calls no remote APIs, and prints readiness booleans/provider name, not credentials. Run `--test-email` to send one clearly labeled test email without needing the monitor yet. Once the monitor is configured, `--test-alert` also tests monitor pings. Neither command performs contractor writes or enables the schedule. Confirm receipt (provider acceptance is not proof of inbox delivery).
+6. With no active maintenance worker, back up the whole protected state consistently, including SQLite/WAL/cache files. Enable both refresh switches, retain `CENSUS_GEOCODING_ENABLED=true` and `TYPESENSE_COLLECTION=contractors`, then manually run `--run` once and inspect its completion, live probes and notification. Only then activate the daily heartbeat. Creating a paused schedule is not activation.
+
+```sh
+npm run data:scheduled -- --preflight
+npm run data:scheduled -- --test-email
+npm run data:scheduled -- --test-alert
+npm run data:scheduled -- --run
+# Optional local Typesense export, loaded into memory only:
+npm run data:scheduled -- --run --credentials-file /absolute/path/to/export.txt
+```
+
+New refreshes seal `retained-audit-v1.json` **before any source write**. They compare all retained facts (including earlier first-missing dates), audit every current address snapshot/hash and accepted/rejected Census outcome, and compare source/index total and geographic counts **inside the guarded index phase, before `completed_at` advances**. A missing baseline on an already-started legacy run is a review stop, not permission to create a new baseline after changes. Previously completed historical runs need not be resumed. `completion-audit.json` contains aggregates only.
+
+After completion, reusable production checks cover exact and typo search, ZIP-centered radius bounds, nearest ordering, distinct pagination, profile JSON-LD/official CSLB links, autocomplete/noindex, freshness dates, and a retained warning when retained records exist. The regression sentinel license is 1082303; a legitimate source change affecting that sentinel may require reviewed test maintenance. Never automatically broaden assertions to make a failure pass. Live results are not a performance benchmark.
+
+The wrapper persists `.data/scheduler/state.json`, per-attempt aggregate history, and an exclusive `worker.lock`. **Any exhausted worker or production-check failure stops future imports until review.** Network retries inside bounded requests remain; SQL timeouts, schema/data/permission failures are not retried as transport failures. An unfinished job created outside this scheduler is not silently adopted. Production verification failure can occur after the database completion date advances: the wrapper reports failure, never success, and does not roll back already committed records or fabricate a new source date.
+
+To recover, inspect the failure, local/remote checkpoints, lock owners and actual processes. Remove only a confirmed stale lock after its process is absent. Then explicitly run `npm run data:scheduled -- --recover ATTEMPT_UUID` (plus the same credentials option if used). It resumes the recorded **refresh run UUID**, not a new release, and preserves prior attempt history. Never have the daily heartbeat run `--recover` on its own, remove locks, edit cursors/receipts, clear pending queues, or weaken guards. A crashed process leaves an interrupted attempt for review; it is not an automatic reimport.
+
+Verified runs with unsuccessful email/monitor delivery stay in a **delivery-only** state; no import or production probe is repeated. **Gmail SMTP has no idempotent-send guarantee:** the worker persists the provider and attempted-send timestamp before contacting Gmail. If acknowledgment is lost or sending fails, later invocations stop for delivery-history review rather than resend automatically. A stable Message-ID aids diagnosis but does not guarantee deduplication. Inspect Gmail Sent/recipient delivery before approving any manual retry; never manually falsify acknowledgment state. An accepted email is not resent if only the monitor fails. Resend can retry using the persistent attempt ID as an idempotency key for up to 23 hours (its provider window is 24 hours); after that it also stops for review. Unknown/changed providers cannot replay an ambiguous send. An unchanged CSLB release exits quietly without a completion email, but sends a successful monitor ping.
+
+Gmail handles refresh completion/failure messages while the computer can run. It **does not replace the independent missed-run monitor**: a sleeping/offline computer cannot send an email about its own missed job. The schedule stays paused until both channels, a manual trial, and activation are confirmed.
+
+Disable the heartbeat and set `CSLB_SCHEDULE_ENABLED=false` to prevent new scheduled runs. This does not cancel an already-running worker or undo committed records. Do not delete `.data` or move to a new host without a controlled single-writer handoff and consistent backup. No paid service, live alert destination, recurring write, database permission change or deployment is enabled merely by this implementation.
+
+## Free business-profile claiming (disabled until launch checks)
+
+The MVP uses **email OTP sign-in → claim request → independent human review → separate business-details editor**. Email ownership is not business authority. No instant approval based on public license/personnel data, email domain, applicant-supplied phone, or a website. There is no payment, document upload, or automatic ownership transfer.
+
+- `/claim/[licenseNumber]`: verified-account request and authority attestation.
+- `/account/sign-in`: Supabase email code with Turnstile; HttpOnly server-managed session cookies. No passwords or service keys in browser code.
+- `/account`: claim status, sign-out, and approved business editors.
+- `/account/business/[licenseNumber]`: description, HTTPS website, explicitly public customer phone/email, hours, and self-reported service areas.
+- `/admin/claims`: independently allowlisted reviewer plus authenticator MFA. An administrator cannot review their own claim. Approval/denial/revocation must include private evidence or a reason.
+
+CSLB license status, business name, classifications, personnel, bonds, insurance, addresses, geographic coordinates, and source dates remain read-only. Marketing content lives in `business_profiles`, not imported tables or the Typesense index. Existing profile URLs, structured data, search, and directory SEO remain unchanged. Account/review/claim routes are dynamic, private/no-store, and noindex. Claim status is **not** an endorsement or current license verification. Service areas are labeled self-reported and do not change nearby-search results.
+
+### Security and ownership model
+
+Migration `20261031204737_business_profile_claims.sql` is additive and initializes its database launch gate to **false**. Tables have RLS and explicit column grants; routes use the caller's publishable/anonymous-key Supabase client, never a service-role fallback. Direct API attempts must satisfy the same rules as the UI. Private reviewer membership/settings are outside the exposed public schema. A verified email, unbanned user, and a still-existing Auth session are required for writes; reviews additionally require `aal2`.
+
+One approved claim is permitted per license. Multiple users can request access, but a second approval is blocked until an independently reviewed revocation. The existing manager is queued a notification of a competing request. Revocation immediately prevents edits and hides the corresponding public overlay. A material change to the imported normalized business name or entity type also suspends display/editing until review; the reviewer must revoke the old claim and review a fresh request. Ordinary status/address refreshes do not overwrite owner content. Replacement approval clears the prior owner's public content while preserving private audit history. Imported missing-source records cannot receive new claims/approvals.
+
+Requests are limited to three pending and five total per verified account in a rolling 24-hour window, enforced under database locks. Supabase Auth CAPTCHA and rate limits protect email requests; an email code does not bypass database quotas. Column grants prevent identity reassignment or claimant-supplied approval. Optimistic timestamps prevent silently overwriting stale edits/reviews. Raw database/Auth/SMTP errors are not returned to users.
+
+### Setup and release checklist — no hosted changes are made by the tests
+
+1. Review and apply only the new claim migration to a staging project first. Do not replay already-applied refresh migrations. Inspect grants/RLS and run the Supabase security/performance advisors before enabling production. The automated suite executes the claim migration and hostile direct-SQL requests in isolated PGlite; it does **not** certify the hosted project's grants, Auth settings, or SMTP delivery.
+2. Configure Supabase Auth email sign-in, email confirmation, custom SMTP, allowed site URLs, and TOTP MFA. The email template must include `{{ .Token }}` so users receive a code, not just a magic link. Set a short OTP lifetime (for example 10 minutes), maintain Auth rate limits, and test expiry/replay. Supabase's default development sender is not a public-user mail service. The Gmail variables previously configured for the local refresh worker do **not** configure Supabase Auth SMTP. Gmail app credentials can be entered in Supabase's private SMTP settings for an initial low-volume pilot; use a dedicated transactional sender before wider rollout, subject to its sending limits and delivery testing.
+3. Create a real Cloudflare Turnstile widget for the deployed hostname. Set `NEXT_PUBLIC_TURNSTILE_SITE_KEY` in Vercel and the matching **secret in Supabase Auth's CAPTCHA settings**. Enable the CAPTCHA requirement there. Never put the secret in `NEXT_PUBLIC_` variables. Merely rendering the widget or setting its site key does not enforce server-side verification. Verify a missing/invalid token is rejected by Supabase directly, not just our route. Use [Cloudflare test keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/) only in isolated nonproduction tests.
+4. Set server-side `CLAIMS_SITE_URL` to the exact origin actually used (currently `https://californiacontractorsearch.vercel.app`; local testing uses its exact port), `CLAIMS_SUPPORT_EMAIL` to a monitored public support inbox, and `CLAIMS_ADMIN_EMAIL` to the private review-alert destination. The UI publishes the support inbox; it does not publish the reviewer or applicant login email. Do not point this at an unowned domain. Keep `CLAIMS_ENABLED=false` until the remaining checks pass.
+5. Sign up the designated reviewer using the configured Auth flow in the staging/pilot environment. Independently confirm their Auth user UUID, then have a trusted database operator add that exact UUID to the private allowlist. Never authorize by editable `user_metadata` or a browser-submitted role:
+
+   ```sql
+   -- Replace with a verified administrator's actual auth.users.id, not an applicant ID.
+   insert into claim_private.admins(user_id) values ('VERIFIED_ADMIN_AUTH_USER_UUID');
+   ```
+
+   At `/admin/claims`, enroll a time-based authenticator using the displayed private setup key and complete its code challenge. Subsequent reviews require the authenticator again when the session is AAL1. Interrupted, unverified MFA enrollment can require an administrator-assisted factor reset; do not bypass MFA. A second independent reviewer is necessary if an administrator wants to claim their own business.
+6. Optional status emails use the durable `business_claim_notices` queue. Set `CLAIMS_EMAIL_ENABLED=true` only after sender/recipient configuration and a deliberate test. For immediate web delivery, Vercel needs server-only `GMAIL_USER`, `GMAIL_APP_PASSWORD` (or the existing explicit Resend configuration), `SUPABASE_SERVICE_ROLE_KEY`, and `CLAIMS_ADMIN_EMAIL`. These are **only** used by the delivery worker; interactive user writes stay user-scoped. Alternatively leave web email off and run the queue worker on this computer with the secrets in ignored `.env.refresh.local`:
+
+   ```sh
+   npm run claims:notify -- --run
+   ```
+
+   This explicitly attempts at most three pending notices; it does not install a schedule. A reviewer can also select “Send pending notifications” when web delivery is configured. Each message is atomically reserved before SMTP. Only explicit recipient acceptance marks `sent`; failures become `review`, and crashes/lost acknowledgments can leave `sending`. Neither is automatically retried, to avoid duplicates. Inspect the provider and private queue before any manual recovery. The original claim/review remains committed if notification delivery fails; account status is authoritative. Do not log recipients, Auth codes, evidence, or credentials. Supabase Auth sends login codes separately from this queue.
+7. In staging, enable the database gate and app flag, then use two different claimant accounts and a separate reviewer. Test submit → pending → independent approval → save → public display; wrong/expired/replayed email codes; invalid CAPTCHA; anonymous/cross-account/direct-API writes; admin AAL1 and self-review rejection; competing claims; revocation; business-identity changes; source refresh preservation; stale edits; notices; sign-out; mobile keyboard navigation; noindex/cache headers. Test review evidence and email addresses are absent from public HTML/API responses. Do not use real government IDs or private documents as test data.
+8. After review, apply the tested migration/allowlist to production and deploy the code **with claims off**. Confirm hosted privileges/advisors, backups, working support/SMTP, and rate limits. Enable the database gate through a trusted operator, then enable `CLAIMS_ENABLED=true` and redeploy as an explicit release decision:
+
+   ```sql
+   update claim_private.settings set enabled=true where singleton;
+   ```
+
+   A database-gate change alone does not expose the UI. A site flag alone does not authorize writes. Keep recurring CSLB refresh activation separate; this feature does not enable that schedule. If problems arise, set the database gate false to stop claim/profile writes and disable the app flag to hide the UI. Existing imported records and private audit history are preserved.
+
+### Review, disputes, privacy, and limitations
+
+Before approval, contact the business through the current official CSLB number or another independently established business channel and confirm the applicant is authorized. Record the date, source, method, and outcome in the private note. Public license information alone proves nothing about the applicant. On an ownership dispute, consult the existing manager and resolve the authority question before revocation/transfer; do not change access solely on receipt of another form. Support requests use the published inbox rather than collecting identity documents in this MVP.
+
+Applicants are told why name/email/role are collected and that login email is private. Public contact fields require separate consent. Audit snapshots contain private claim/review history and earlier public content, readable only by MFA reviewers; they have no public download route. There is no automatic audit deletion or self-service account deletion in this MVP (foreign keys deliberately prevent orphaning claim history). Before public launch, establish and publish an operator-approved retention/deletion procedure and privacy notice, including how to request correction/deletion and how disputes are retained. Do not promise automatic data deletion that is not implemented. No photos, documents, reviews, subscriptions, automatic domain approval, or bulk profile ownership are included.
+
+Verification commands:
+
+```sh
+npm test
+npx tsc --noEmit
+npm run build
+npx eslint lib/claims components/claims app/account app/claim app/admin/claims app/api/account app/api/claims proxy.ts scripts/send-claim-notices.ts
+```
+
+Implementation references: [Supabase server-side clients](https://supabase.com/docs/guides/auth/server-side/creating-a-client), [email OTP](https://supabase.com/docs/guides/auth/auth-email-passwordless), [custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp), [CAPTCHA](https://supabase.com/docs/guides/auth/auth-captcha), and [TOTP MFA](https://supabase.com/docs/guides/auth/auth-mfa/totp).
+
+Business accounts and free profile claims are implemented behind disabled launch gates. Customer reviews, lead generation, paid placement, and scraping are not implemented.

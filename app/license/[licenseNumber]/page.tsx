@@ -9,6 +9,9 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { featuredClassifications, getCslbLicenseUrl } from "@/config/site";
 import { DataFreshness } from "@/components/data-freshness";
 import { getDataFreshness } from "@/lib/refresh/freshness";
+import { claimsEnabled } from "@/lib/claims/config";
+import { publicBusinessProfile } from "@/lib/claims/public-profile";
+import { PublicBusinessDetails } from "@/components/claims/public-details";
 
 type PageProps = { params: Promise<{ licenseNumber: string }> };
 
@@ -33,6 +36,8 @@ export default async function LicensePage({ params }: PageProps) {
   const retained = contractor.dataSource === "cslb" && Boolean(contractor.sourceMissingSince);
   // A dataset-wide refresh must not imply that an absent profile was refreshed.
   const freshness = contractor.dataSource === "cslb" && !retained ? await getDataFreshness() : undefined;
+  const claiming = claimsEnabled() && contractor.dataSource === "cslb";
+  const businessProfile = claiming ? await publicBusinessProfile(contractor.id) : null;
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -79,6 +84,7 @@ export default async function LicensePage({ params }: PageProps) {
         </header>
 
         <div className="profile-grid">
+          {claiming && (businessProfile || !retained) && <PublicBusinessDetails profile={businessProfile} licenseNumber={contractor.licenseNumber} />}
           <ProfileSection number="01" title="License Information">
             <dl className="fact-list">
               <Fact label="License number" value={contractor.licenseNumber} />
