@@ -1,9 +1,9 @@
 "use client";
 
-import Script from "next/script";
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { BusinessProfile, Claim } from "@/lib/claims/validation";
+import { TurnstileChallenge } from "./turnstile-challenge";
 
 type Reply = {
   ok?: boolean;
@@ -84,13 +84,6 @@ export function ClaimForm({
   );
 }
 
-type Turnstile = {
-  render: (container: HTMLElement, options: Record<string, unknown>) => string;
-  reset: (id: string) => void;
-};
-function captcha() {
-  return (window as unknown as { turnstile?: Turnstile }).turnstile;
-}
 export function SignInForm({
   next,
   siteKey,
@@ -98,9 +91,8 @@ export function SignInForm({
   next: string;
   siteKey: string;
 }) {
-  const router = useRouter(),
-    container = useRef<HTMLDivElement>(null),
-    widget = useRef<string | undefined>(undefined);
+  const router = useRouter();
+  const [challengeAttempt, setChallengeAttempt] = useState(0);
   const [token, setToken] = useState(""),
     [address, setAddress] = useState(""),
     [code, setCode] = useState("");
@@ -108,21 +100,10 @@ export function SignInForm({
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
     [failed, setFailed] = useState(false);
-  function mountChallenge() {
-    if (container.current && widget.current === undefined && captcha())
-      widget.current = captcha()!.render(container.current, {
-        sitekey: siteKey,
-        callback: (value: string) => setToken(value),
-        "expired-callback": () => setToken(""),
-        "error-callback": () => {
-          setToken("");
-          setFailed(true);
-          setMessage(
-            "The security challenge could not load. Reload the page and try again.",
-          );
-        },
-      });
-  }
+  const challengeError = useCallback((message: string) => {
+    setFailed(true);
+    setMessage(message);
+  }, []);
   async function send(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -140,15 +121,18 @@ export function SignInForm({
         router.refresh();
       } else {
         setSent(true);
+        setToken("");
         setMessage(reply.message || "Check your email for a code.");
       }
     } catch (error) {
       setFailed(true);
       setMessage(error instanceof Error ? error.message : "Please try again.");
+      if (!sent) {
+        setToken("");
+        setChallengeAttempt((attempt) => attempt + 1);
+      }
     } finally {
       setBusy(false);
-      if (widget.current !== undefined) captcha()?.reset(widget.current);
-      setToken("");
     }
   }
   return (
@@ -186,17 +170,14 @@ export function SignInForm({
             />
           </label>
         )}
-        <div hidden={sent}>
-          <div ref={container} />
-          <Script
-            src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
-            onReady={mountChallenge}
-            onError={() => {
-              setFailed(true);
-              setMessage("Unable to load sign-in protection. Please reload.");
-            }}
+        {!sent && (
+          <TurnstileChallenge
+            key={challengeAttempt}
+            siteKey={siteKey}
+            onToken={setToken}
+            onError={challengeError}
           />
-        </div>
+        )}
         <button className="button-primary" disabled={busy || (!sent && !token)}>
           {busy
             ? "Working…"
@@ -210,7 +191,9 @@ export function SignInForm({
             type="button"
             onClick={() => {
               setSent(false);
+              setToken("");
               setCode("");
+              setFailed(false);
               setMessage(
                 "Wait at least one minute before requesting another code.",
               );

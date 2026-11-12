@@ -117,6 +117,36 @@ describe("passwordless routes", () => {
     ).toEqual({ ok: true, factorId: id });
     expect(auth.mfa.enroll).not.toHaveBeenCalled();
   });
+  it("enrolls a separate reviewer authenticator without granting review access", async () => {
+    auth.mfa.listFactors.mockResolvedValue({ data: { totp: [] }, error: null });
+    auth.mfa.enroll.mockResolvedValue({
+      data: { id, totp: { secret: "fixture-enrollment-secret" } }, error: null,
+    });
+    const res = await account(post({ action: "enroll-mfa" }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toContain("no-store");
+    expect(res.headers.get("X-Robots-Tag")).toContain("noindex");
+    expect(await res.json()).toEqual({ ok: true, factorId: id, secret: "fixture-enrollment-secret" });
+    expect(auth.mfa.enroll).toHaveBeenCalledWith({
+      factorType: "totp", friendlyName: "California Contractor Search reviews",
+    });
+    expect(auth.mfa.challengeAndVerify).not.toHaveBeenCalled();
+    expect(from).not.toHaveBeenCalled();
+  });
+  it("rejects incorrect TOTP codes without exposing provider details", async () => {
+    auth.mfa.challengeAndVerify.mockResolvedValue({ error: { message: "private factor details" } });
+    const res = await account(post({ action: "verify-mfa", factor_id: id, code: "000000" }));
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("Authenticator verification failed");
+    expect(from).not.toHaveBeenCalled();
+  });
+  it("verifies the reviewer factor before returning to the review queue", async () => {
+    auth.mfa.challengeAndVerify.mockResolvedValue({ error: null });
+    const res = await account(post({ action: "verify-mfa", factor_id: id, code: "123456" }));
+    expect(await res.json()).toEqual({ ok: true, next: "/admin/claims" });
+    expect(auth.mfa.challengeAndVerify).toHaveBeenCalledWith({ factorId: id, code: "123456" });
+    expect(from).not.toHaveBeenCalled();
+  });
 });
 describe("claim write routes", () => {
   it("requires a verified account before any write", async () => {
